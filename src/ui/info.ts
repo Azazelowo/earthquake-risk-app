@@ -22,7 +22,7 @@ export function conditionNotes(s: State): string[] {
     notes.push(`你選的範圍約有 ${Math.round((1 - a.coverage) * 100)}% 在模型網格外，那部分沒有計入，機率會偏低。`);
   if (c.radiusKm < f.grid.deg * 111) notes.push(`範圍比模型的一格（約 ${Math.round(f.grid.deg * 111)} km）還小：是把那一格的機率依面積比例分配，不代表模型能分辨這麼細。`);
   const under = undercountAt(f, c.T);
-  if (under) notes.push(`最近 ${f.data_status.gap_days} 天是暫時資料（小地震不完整），「現在」的機率可能低估最多約 ${Math.round(under * 100)}%。`);
+  if (under) notes.push(`最近 ${esc(String(f.data_status.gap_days))} 天是暫時資料（小地震不完整），「現在」的機率可能低估最多約 ${Math.round(under * 100)}%。`);
   return notes;
 }
 
@@ -115,7 +115,7 @@ export function renderInfo(s: State, backHref: string): string {
       <table class="tbl kvt">
         <tr><th>模型發布時間</th><td>${twTime(f.issued_at)}（${ago(f.issued_at)}）</td></tr>
         <tr><th>正式目錄到</th><td>${twTime(ds.catalog_end)}</td></tr>
-        <tr><th>之後的暫時資料</th><td>${ds.gap_days} 天、${ds.n_provisional} 筆（${esc(ds.sources.join("、"))}）</td></tr>
+        <tr><th>之後的暫時資料</th><td>${esc(String(ds.gap_days))} 天、${esc(String(ds.n_provisional))} 筆（${esc(ds.sources.join("、"))}）</td></tr>
         <tr><th>可能低估</th><td>${Object.entries(ds.undercount_by_horizon).map(([k, v]) => `${timeLabel(+k)} 最多約 ${Math.round(v * 100)}%`).join("、") || "—"}</td></tr>
         <tr><th>模型範圍</th><td>北緯 ${f.grid.lat_min}–${f.grid.lat_max}°、東經 ${f.grid.lon_min}–${f.grid.lon_max}°，每格 ${f.grid.deg}°（約 ${Math.round(f.grid.deg * 111)} km）</td></tr>
       </table>

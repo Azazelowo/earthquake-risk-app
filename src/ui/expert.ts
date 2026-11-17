@@ -262,7 +262,7 @@ P(範圍)     = 1 − exp(−N(範圍))                卜瓦松：至少一次<
     <p>目前這份資料（3 天）全區 ${full.length} 格的分布：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${counts[i]}`).join("、")}。正式門檻會用回測期間各狀態出現的頻率來定，讓「高」不會天天出現。</p>
   </div></details>
   <details class="fold"><summary>資料狀態</summary><div class="fold-body">
-    <p>正式目錄到 ${twTime(f.data_status.catalog_end)}；之後 ${f.data_status.gap_days} 天用 ${f.data_status.sources.join("、")} 暫時補了 ${f.data_status.n_provisional} 筆。</p>
+    <p>正式目錄到 ${twTime(f.data_status.catalog_end)}；之後 ${esc(String(f.data_status.gap_days))} 天用 ${esc(f.data_status.sources.join("、"))} 暫時補了 ${esc(String(f.data_status.n_provisional))} 筆。</p>
     <p>缺口評估（現在的總數可能低估最多）：${Object.entries(f.data_status.undercount_by_horizon).map(([k, v]) => `${tl(+k)} ${Math.round(v * 100)}%`).join("、")}</p>
   </div></details>`;
 }
@@ -276,7 +276,7 @@ function viewMore(s: State) {
       <button class="btn" data-act="download">下載 feed.json</button></div>
     <div class="card"><b>最近的地震</b>
       <table class="tbl"><thead><tr><th>時間</th><th>規模</th><th>深度</th><th>來源</th></tr></thead><tbody>
-      ${s.feed.recent.slice(0, 8).map((e) => `<tr><td>${twTime(e.time)}</td><td>${e.ml.toFixed(1)}</td><td>${e.depth_km} km</td><td>${e.source}</td></tr>`).join("")}
+      ${s.feed.recent.slice(0, 8).map((e) => `<tr><td>${twTime(e.time)}</td><td>${Number(e.ml).toFixed(1)}</td><td>${esc(String(e.depth_km))} km</td><td>${esc(e.source)}</td></tr>`).join("")}
       </tbody></table></div>
     <div class="card"><b>參考資料</b>
       <ul class="refs">

@@ -4,9 +4,10 @@
 // 展開中的摺疊區、輸入到一半的文字與鍵盤焦點；地圖則由 ui/map.ts 自己留著，不跟著重建。
 import "./style.css";
 import { makeMockFeed } from "./data/mock";
+import { cachedFeed, loadFeed, staleHours } from "./data/feed";
 import type { State, Cond, Place } from "./state";
 import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty } from "./state";
-import { distText } from "./format";
+import { distText, esc, twTime } from "./format";
 import { renderPublic, renderPlaceSheet, renderCondSheet } from "./ui/public";
 import { renderExpert, renderTabbar, renderLayersSheet, pickNumbers, type ExpertTab } from "./ui/expert";
 import { renderInfo } from "./ui/info";
@@ -17,9 +18,11 @@ import { loadTowns, describePlace } from "./geo/towns";
 import { initPwa, promptInstall, checkUpdate, applyUpdate } from "./pwa";
 
 const saved = loadSaved();
+// 先用上次成功下載的資料畫出畫面（沒有就用假資料），同時在背景下載最新的 feed
+const cached = cachedFeed();
 const fallback = COUNTIES.find((c) => c.name === "高雄市")!;
 const s: State = {
-  feed: makeMockFeed(),
+  feed: cached ?? makeMockFeed(),
   place: saved.place ?? { lat: fallback.lat, lon: fallback.lon, label: "高雄市", source: "default" },
   cond: saved.cond ?? { ...DEFAULT_COND },
   locate: "idle",
@@ -28,6 +31,7 @@ const s: State = {
   basemap: saved.basemap ?? DEFAULT_BASEMAP,
   smooth: saved.smooth ?? 0,
   mapFull: false,
+  feedStatus: { origin: "loading", error: null },
 };
 let sheet: "" | "place" | "cond" | "layers" = "";
 /** ⓘ 頁按「返回」要回到的畫面 */
@@ -93,7 +97,7 @@ function render() {
       </div>
     </div>
   </header>
-  ${s.feed.mock ? `<div class="mockbar">雛型：所有數字都是假資料，只用來試操作</div>` : ""}
+  ${feedBar()}
   <main class="${expert ? "with-tabbar" : ""}">${body}</main>
   ${expert ? renderTabbar(r.tab) : `<footer class="foot">高科大地震風險評估實務專題・不是地震預報</footer>`}
   <div class="scrim ${sheet ? "show" : ""}" data-act="close"></div>
@@ -107,6 +111,30 @@ function render() {
   const keyEl = document.getElementById("carto-key") as HTMLInputElement | null;
   if (keyEl && keyDraft) keyEl.value = keyDraft;
   if (focusSel) app.querySelector<HTMLElement>(focusSel)?.focus({ preventScroll: true });
+}
+
+/** 畫面最上方的資料狀態提示：假資料、離線、過期都要讓人一眼看到（審查 S-12、NFR-R4） */
+function feedBar(): string {
+  const st = s.feedStatus, f = s.feed;
+  if (f.mock && st?.origin === "loading") return `<div class="mockbar">正在取得最新資料…</div>`;
+  if (f.mock && st?.origin === "mock")
+    return `<div class="mockbar">無法取得模型資料（${esc(st.error ?? "原因不明")}）：以下是示意用假資料，不是真實機率</div>`;
+  if (f.mock) return `<div class="mockbar">雛型：所有數字都是假資料，只用來試操作</div>`;
+  const h = staleHours(f);
+  if (st?.origin === "cache")
+    return `<div class="mockbar">${h ? "資料已過期・" : ""}目前顯示上次取得的資料（${twTime(f.issued_at)} 發布）${st.error ? `：${esc(st.error)}` : ""}</div>`;
+  if (h) return `<div class="mockbar">資料已 ${Math.round(h)} 小時沒有更新（最後發布 ${twTime(f.issued_at)}），數字可能過時</div>`;
+  return "";
+}
+
+/** 下載最新資料後重畫；失敗時 loadFeed 會退回上次的資料或假資料 */
+async function refreshFeed() {
+  const r = await loadFeed();
+  // 畫面上已經有這次開啟時下載到的資料，這次失敗就保留它，不要換成更舊的快取或假資料
+  if (r.origin !== "network" && s.feedStatus?.origin === "network") return;
+  s.feed = r.feed;
+  s.feedStatus = { origin: r.origin, error: r.error };
+  render();
 }
 
 // ---------- 位置 ----------
@@ -283,6 +311,9 @@ window.addEventListener("hashchange", () => {
 });
 // 連線狀態改變時更新地圖上的提示（離線時沒有底圖）
 for (const type of ["online", "offline"]) window.addEventListener(type, () => render());
+// 恢復連線時馬上更新；開著不動時每 15 分鐘檢查一次（資料每小時更新）
+window.addEventListener("online", () => void refreshFeed());
+setInterval(() => void refreshFeed(), 15 * 60e3);
 
 // ---------- 啟動 ----------
 
@@ -294,6 +325,9 @@ initPwa(() => {
 });
 // 先看完使用前說明再要求定位，避免說明視窗和瀏覽器的定位詢問同時跳出來。
 // 第一次開、或上次用 GPS：自動定位；使用者選過縣市或地圖選點就尊重他的選擇。
-void showDisclaimer(s.feed.mock).then(() => {
-  if (!saved.place || saved.place.source === "gps") locate();
-});
+// 先下載資料（最多 10 秒）再顯示使用前說明，說明的內容才會對應「真資料」或「假資料」
+void refreshFeed()
+  .then(() => showDisclaimer(s.feed.mock))
+  .then(() => {
+    if (!saved.place || saved.place.source === "gps") locate();
+  });
