@@ -35,6 +35,8 @@ export interface State {
   smooth: number;
   /** 地圖全螢幕（不儲存） */
   mapFull: boolean;
+  /** 資料從哪裡來：loading＝第一次下載中；network＝最新；cache＝上次成功的資料（離線或下載失敗）；mock＝示意用假資料 */
+  feedStatus?: { origin: "loading" | "network" | "cache" | "mock"; error: string | null };
 }
 
 /** 金門、連江在模型網格（21–26°N、119–123°E）外 */

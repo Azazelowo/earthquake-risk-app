@@ -10,6 +10,8 @@ interface ImportMetaEnv {
    * 要靠 CARTO 後台的「網域限制」保護。沒設時，使用者可以在 ⓘ 頁貼上自己的金鑰（只存在那支手機）。
    */
   readonly VITE_CARTO_KEY?: string;
+  /** feed.json 的網址（可不設）。預設是破專題 repo feed 分支上的檔案，見 src/data/feed.ts */
+  readonly VITE_FEED_URL?: string;
 }
 
 /** Android／桌面 Chrome 的安裝事件（還不是標準，TypeScript 內建型別沒有） */
