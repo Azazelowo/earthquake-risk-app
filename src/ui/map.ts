@@ -7,7 +7,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { State } from "../state";
 import { cellProbabilities } from "../core/hazard";
-import { LEVEL_EDGES, twTime } from "../format";
+import { LEVEL_EDGES, esc, twTime } from "../format";
 import { resolveBasemap, tileUrl } from "./basemaps";
 import { blur, rasterize, toField, SMOOTH_SIGMA, type Rgba } from "./smooth";
 
@@ -173,7 +173,7 @@ function drawMarks(s: State) {
       radius: 1.5 + Math.max(e.ml - 2.5, 0) ** 1.6, color: "#111", weight: 1, fillColor: "#fff", fillOpacity: 0.7,
       bubblingMouseEvents: false, // 點地震圓點只看它的資訊，不要當成「換中心」
     })
-      .bindPopup(`M${e.ml.toFixed(1)}・深度 ${e.depth_km} km<br>${twTime(e.time)}（${e.source}）`)
+      .bindPopup(`M${Number(e.ml).toFixed(1)}・深度 ${esc(String(e.depth_km))} km<br>${twTime(e.time)}（${esc(e.source)}）`)
       .addTo(marks);
   }
   // 你的範圍：白色粗線墊底＋深色虛線，淺色、深色、航照底圖上都看得到
