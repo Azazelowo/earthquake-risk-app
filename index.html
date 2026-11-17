@@ -3,13 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f1720" />
+    <meta name="description" content="和平常比，你附近的地震風險是多少。高科大實務專題成果，不是地震預報。" />
+    <meta name="theme-color" content="#0f1720" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f3f5f8" media="(prefers-color-scheme: light)" />
+    <!-- iPhone「加入主畫面」：圖示必須是 PNG；狀態列用 default，淺色模式下文字才看得到 -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="地震風險" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="地震風險評估" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="./icon.svg" />
-    <title>地震風險評估</title>
+    <link rel="icon" href="./icons/icon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <title>臺灣地震風險評估</title>
   </head>
   <body>
     <div id="app"></div>

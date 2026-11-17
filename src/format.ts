@@ -10,6 +10,8 @@ export interface Level {
 export const LEVEL_EDGES = [1.5, 3, 10];
 
 export function levelOf(ratio: number): Level {
+  // 倍數算不出來（範圍內沒有模型格子）時不能落到最高等級；呼叫端應該先檢查 covered，這裡是最後一道保險
+  if (!isFinite(ratio)) return { key: "lv0", title: "無法比較", hint: "這個範圍沒有可用的模型資料。" };
   if (ratio < LEVEL_EDGES[0])
     return { key: "lv0", title: "和平常差不多", hint: "台灣本來就常有地震，平時的防震準備照常就好。" };
   if (ratio < LEVEL_EDGES[1])
@@ -55,6 +57,15 @@ export function ago(iso: string): string {
   if (h < 1) return `${Math.max(1, Math.round(h * 60))} 分鐘前`;
   if (h < 48) return `${Math.round(h)} 小時前`;
   return `${Math.round(h / 24)} 天前`;
+}
+
+/** 距離：「約 30 公尺」「約 850 公尺」「約 1.5 公里」——取整到看得懂的刻度，不假裝精確 */
+export function distText(m: number): string {
+  if (!(m >= 0)) return "";
+  if (m < 100) return `約 ${Math.max(10, Math.round(m / 10) * 10)} 公尺`;
+  if (m < 1000) return `約 ${Math.round(m / 50) * 50} 公尺`;
+  if (m < 10000) return `約 ${(m / 1000).toFixed(1)} 公里`;
+  return `約 ${Math.round(m / 1000)} 公里`;
 }
 
 export const esc = (s: string) =>

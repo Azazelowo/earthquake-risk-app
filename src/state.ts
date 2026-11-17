@@ -1,11 +1,17 @@
-// 全域狀態：位置與條件。位置只存在本機（localStorage），從不送出。
+// 全域狀態：位置、條件、地圖偏好。全部只存在本機（localStorage），從不送出。
 import type { Feed } from "./data/schema";
 
 export interface Place {
   lat: number;
   lon: number;
+  /** 主要顯示文字，例：「高雄市燕巢區」「高雄市燕巢區附近」「高雄市」 */
   label: string;
-  source: "gps" | "county" | "default";
+  /** 補充說明，例：「定位誤差約 30 公尺」「地圖選點」；沒有就省略 */
+  detail?: string;
+  /** gps＝裝置定位；county＝選縣市；map＝在地圖上點選；default＝還沒選過 */
+  source: "gps" | "county" | "default" | "map";
+  /** 裝置回報的定位誤差半徑（公尺），只有 gps 才有 */
+  accuracyM?: number;
 }
 
 export interface Cond {
@@ -23,6 +29,12 @@ export interface State {
   locate: Locate;
   mapLayer: "p" | "ratio";
   scope: "point" | "all";
+  /** 底圖代號（見 ui/basemaps.ts） */
+  basemap: string;
+  /** 地圖平滑程度：0＝原始 0.2° 格子，1–3 越大越平滑（只是顯示效果） */
+  smooth: number;
+  /** 地圖全螢幕（不儲存） */
+  mapFull: boolean;
 }
 
 /** 金門、連江在模型網格（21–26°N、119–123°E）外 */
@@ -41,25 +53,63 @@ export const COUNTIES: { name: string; lat: number; lon: number; outside?: boole
 ];
 
 export const RADII = [10, 30, 50, 100];
+/** 地圖上的半徑滑桿範圍（km）。小於一格（約 20 km）時是把格內機率依面積比例分配，屬於外推。 */
+export const RADIUS_MIN = 5, RADIUS_MAX = 200, RADIUS_STEP = 5;
 export const TIMES: [number, string][] = [[1 / 24, "1 小時"], [1, "1 天"], [3, "3 天"], [7, "7 天"], [30, "30 天"]];
 export const MAGS = [4, 5, 6, 7];
 export const DEFAULT_COND: Cond = { radiusKm: 50, T: 3, m: 5 };
+export const SMOOTH_LABELS = ["格子", "輕", "中", "強"];
 
 const KEY = "eqrisk.v1";
 
-export function loadSaved(): { place?: Place; cond?: Cond } {
+export interface Saved {
+  place?: Place;
+  cond?: Cond;
+  basemap?: string;
+  smooth?: number;
+  mapLayer?: State["mapLayer"];
+}
+
+const num = (v: unknown): v is number => typeof v === "number" && isFinite(v);
+
+/** 本機存的資料可能是舊版格式或被改過：只收看得懂的欄位，其餘丟掉用預設值 */
+export function sanitize(raw: unknown): Saved {
+  const out: Saved = {};
+  if (!raw || typeof raw !== "object") return out;
+  const r = raw as Record<string, any>;
+  const p = r.place;
+  if (p && num(p.lat) && num(p.lon) && typeof p.label === "string" && ["gps", "county", "default", "map"].includes(p.source)) {
+    out.place = { lat: p.lat, lon: p.lon, label: p.label, source: p.source };
+    if (typeof p.detail === "string") out.place.detail = p.detail;
+    if (num(p.accuracyM)) out.place.accuracyM = p.accuracyM;
+  }
+  const c = r.cond;
+  if (c && num(c.radiusKm) && num(c.T) && num(c.m) && c.radiusKm >= RADIUS_MIN && c.radiusKm <= RADIUS_MAX && c.T > 0)
+    out.cond = { radiusKm: c.radiusKm, T: c.T, m: c.m };
+  if (typeof r.basemap === "string") out.basemap = r.basemap;
+  if (num(r.smooth) && r.smooth >= 0 && r.smooth < SMOOTH_LABELS.length) out.smooth = Math.round(r.smooth);
+  if (r.mapLayer === "p" || r.mapLayer === "ratio") out.mapLayer = r.mapLayer;
+  return out;
+}
+
+export function loadSaved(): Saved {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "{}");
+    return sanitize(JSON.parse(localStorage.getItem(KEY) || "{}"));
   } catch {
     return {};
   }
 }
 
+/** 存進本機前把座標降低精度：GPS 位置取到 0.01°（約 1 km），地圖選點取到 0.001°（約 100 m） */
+export function coarsen(p: Place): Place {
+  const d = p.source === "gps" ? 2 : 3;
+  return { ...p, lat: +p.lat.toFixed(d), lon: +p.lon.toFixed(d) };
+}
+
 export function save(s: State) {
   try {
-    // GPS 位置四捨五入到 0.01°（約 1 km）再存，降低精確位置留在裝置上的風險
-    const p = s.place.source === "gps" ? { ...s.place, lat: +s.place.lat.toFixed(2), lon: +s.place.lon.toFixed(2) } : s.place;
-    localStorage.setItem(KEY, JSON.stringify({ place: p, cond: s.cond }));
+    const data: Saved = { place: coarsen(s.place), cond: s.cond, basemap: s.basemap, smooth: s.smooth, mapLayer: s.mapLayer };
+    localStorage.setItem(KEY, JSON.stringify(data));
   } catch {
     /* 無痕模式等情況：不存也能用 */
   }
@@ -71,7 +121,12 @@ export function timeLabel(T: number): string {
   return T < 1 ? `${+(T * 24).toFixed(1)} 小時` : `${+T.toFixed(1)} 天`;
 }
 
-/** 經緯度 → 最近縣市名稱（只在手機端算） */
+/** 位置的短名稱：去掉括號說明與結尾的「附近」，用在「XX 附近 3 天內…」這類句子裡 */
+export function placeShort(p: Place): string {
+  return p.label.replace(/（.*?）/g, "").replace(/附近$/, "") || "這裡";
+}
+
+/** 經緯度 → 最近縣市名稱（界線檔還沒載入時的備援；只在手機端算） */
 export function nearestCounty(lat: number, lon: number): string {
   let best = COUNTIES[0], bd = Infinity;
   for (const c of COUNTIES) {

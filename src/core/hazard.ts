@@ -55,6 +55,57 @@ export function pointWeights(feed: Feed, lat: number, lon: number, radiusKm: num
 
 export const allWeights = (feed: Feed) => feed.cells.lat.map(() => 1);
 
+// ---------- 範圍是否落在模型網格內 ----------
+
+/** 區域面積（km²）：每格面積 × 該格的權重。對應 Python region_area_km2。 */
+export function regionAreaKm2(feed: Feed, w: number[]): number {
+  const d = feed.grid.deg, r = Math.PI / 180;
+  let s = 0;
+  for (let i = 0; i < w.length; i++) if (w[i]) s += w[i] * (d * KM_PER_DEG) ** 2 * Math.cos((feed.cells.lat[i] + d / 2) * r);
+  return s;
+}
+
+/** 對應 Python circle_area_km2 */
+export const circleAreaKm2 = (radiusKm: number) => Math.PI * radiusKm ** 2;
+
+export function inGrid(feed: Feed, lat: number, lon: number): boolean {
+  const g = feed.grid;
+  return lat >= g.lat_min && lat <= g.lat_max && lon >= g.lon_min && lon <= g.lon_max;
+}
+
+/**
+ * 圓形範圍有多少比例落在模型網格內（0–1）。網格外的部分不計入期望數（同 Python 的做法），
+ * 所以比例太低時算出來的機率沒有意義——畫面要改顯示「目前模型未涵蓋此區域」，不能顯示成很低的機率。
+ * 每格只切 10×10 個子點，小半徑時比例會有幾個百分點的量化誤差，所以上限截在 1。
+ */
+export function coverage(feed: Feed, w: number[], radiusKm: number): number {
+  return Math.min(1, regionAreaKm2(feed, w) / circleAreaKm2(radiusKm));
+}
+
+/** 低於這個比例（或圓心在網格外）就視為模型未涵蓋 */
+export const MIN_COVERAGE = 0.5;
+/** 低於這個比例要提醒「有一部分在網格外、未計入」 */
+export const FULL_COVERAGE = 0.9;
+
+const cellMaps = new WeakMap<Feed, Map<string, number>>();
+const cellKey = (lat: number, lon: number, d: number) => `${Math.round(lat / d)}:${Math.round(lon / d)}`;
+
+/** 經緯度落在哪一格（回傳 cells 的索引；不在任何一格回傳 -1） */
+export function cellIndexAt(feed: Feed, lat: number, lon: number): number {
+  if (!inGrid(feed, lat, lon)) return -1;
+  const g = feed.grid, d = g.deg;
+  let map = cellMaps.get(feed);
+  if (!map) {
+    map = new Map();
+    for (let i = 0; i < feed.cells.lat.length; i++) map.set(cellKey(feed.cells.lat[i], feed.cells.lon[i], d), i);
+    cellMaps.set(feed, map);
+  }
+  // 先算第幾格再換回西南角，避免 23.8/0.2 這類浮點誤差落到隔壁格
+  const la = g.lat_min + Math.min(Math.floor((lat - g.lat_min) / d + 1e-9), Math.round((g.lat_max - g.lat_min) / d) - 1) * d;
+  const lo = g.lon_min + Math.min(Math.floor((lon - g.lon_min) / d + 1e-9), Math.round((g.lon_max - g.lon_min) / d) - 1) * d;
+  return map.get(cellKey(la, lo, d)) ?? -1;
+}
+
 function matOf(feed: Feed, which: Which) {
   return which === "full" ? feed.n_full : feed.n_bg;
 }
@@ -94,7 +145,34 @@ export interface Assessment {
 export function assess(feed: Feed, w: number[], m: number, T: number): Assessment {
   const p = regionProbability(feed, w, m, T, "full");
   const pBg = regionProbability(feed, w, m, T, "bg");
-  return { p, pBg, ratio: pBg > 0 ? p / pBg : Infinity };
+  // 平常機率為 0 代表範圍內沒有任何格子：倍數沒有定義（NaN），不能當成「無限大」而顯示成最高等級
+  return { p, pBg, ratio: pBg > 0 ? p / pBg : NaN };
+}
+
+export interface PointAssessment extends Assessment {
+  /** 圓形範圍落在模型網格內的比例（0–1） */
+  coverage: number;
+  /** false＝模型未涵蓋這個位置，p／pBg／ratio 不可使用 */
+  covered: boolean;
+}
+
+/** 以 (lat, lon) 為圓心、半徑 radiusKm 的評估，並檢查是否在模型範圍內 */
+export function assessPoint(feed: Feed, lat: number, lon: number, radiusKm: number, m: number, T: number): PointAssessment {
+  const w = pointWeights(feed, lat, lon, radiusKm);
+  const cov = coverage(feed, w, radiusKm);
+  const a = assess(feed, w, m, T);
+  return { ...a, coverage: cov, covered: inGrid(feed, lat, lon) && cov >= MIN_COVERAGE && a.pBg > 0 };
+}
+
+/**
+ * 這組條件是否在回測驗證過的範圍內。只用來決定畫面上的小標籤（已驗證／外推估計），不影響計算。
+ * 規模：m_ref ≤ m < 6.5（更小的目錄不完整、更大的回測樣本極少，同 reliabilityNotes）；時間：回測表涵蓋的範圍內。
+ */
+export function isVerified(feed: Feed, m: number, T: number): boolean {
+  if (m < feed.params.m_ref || m >= 6.5) return false;
+  const ts = feed.backtest.map((r) => r.horizon_days);
+  if (!ts.length) return false;
+  return T >= Math.min(...ts) * (1 - 1e-9) && T <= Math.max(...ts) * (1 + 1e-9);
 }
 
 /** 可信度提示（對應 Python reliability） */

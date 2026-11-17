@@ -1,11 +1,15 @@
 // 專家版：三種「3 中 2」檢視（地圖／規模／時間）＋驗證＋更多。地圖由 map.ts 在畫面插入後掛上。
 import type { State } from "../state";
 import type { BacktestRow } from "../data/schema";
-import { RADII, TIMES, MAGS, timeLabel } from "../state";
-import { pointWeights, allWeights, regionRef, scaleMagnitude, probability, magnitudeAtProbability, reliabilityNotes, interpHorizon } from "../core/hazard";
+import { RADII, RADIUS_MIN, RADIUS_MAX, RADIUS_STEP, SMOOTH_LABELS, TIMES, MAGS, timeLabel, placeShort } from "../state";
+import {
+  pointWeights, allWeights, regionRef, scaleMagnitude, probability, magnitudeAtProbability, reliabilityNotes, interpHorizon,
+  assessPoint, cellIndexAt, cellProbabilities, FULL_COVERAGE,
+} from "../core/hazard";
 import { lineChart } from "./chart";
-import { pct, ratioText, twTime, esc } from "../format";
+import { pct, ratioText, twTime, esc, levelOf } from "../format";
 import { LEVEL_EDGES } from "../format";
+import { BASEMAPS, resolveBasemap, usable } from "./basemaps";
 
 export type ExpertTab = "map" | "mag" | "time" | "verify" | "more";
 
@@ -24,15 +28,29 @@ const seg = (key: string, opts: [number | string, string][], cur: number | strin
 
 function scopeCtl(s: State) {
   return `<div class="ctl"><label>範圍</label><div class="seg sm">
-    <button class="${s.scope === "point" ? "on" : ""}" data-scope="point">點：${esc(s.place.label.replace(/（.*）/, ""))}</button>
+    <button class="${s.scope === "point" ? "on" : ""}" data-scope="point">點：${esc(placeShort(s.place))}</button>
     <button class="${s.scope === "all" ? "on" : ""}" data-scope="all">全區</button>
     <button disabled title="雛型尚未提供">線（之後）</button>
   </div></div>
-  ${s.scope === "point" ? `<div class="ctl"><label>半徑</label>${seg("radiusKm", RADII.map((r) => [r, `${r} km`]), s.cond.radiusKm)}</div>` : ""}`;
+  ${s.scope === "point" ? `<div class="ctl"><label>半徑</label>${seg("radiusKm", radiusOpts(s), s.cond.radiusKm)}</div>` : ""}`;
+}
+
+/** 半徑選項：固定四個＋（如果是在地圖上用滑桿調的其他值）目前的值 */
+function radiusOpts(s: State): [number, string][] {
+  const list = RADII.includes(s.cond.radiusKm) ? RADII : [...RADII, s.cond.radiusKm].sort((a, b) => a - b);
+  return list.map((r) => [r, `${r} km`]);
 }
 
 function weights(s: State) {
   return s.scope === "all" ? allWeights(s.feed) : pointWeights(s.feed, s.place.lat, s.place.lon, s.cond.radiusKm);
+}
+
+/** 「點」範圍但位置在模型網格外：不畫圖（全是 0 的曲線沒有意義，也會讓人誤以為機率是 0） */
+function uncoveredBox(s: State): string {
+  if (s.scope !== "point") return "";
+  const a = assessPoint(s.feed, s.place.lat, s.place.lon, s.cond.radiusKm, s.cond.m, s.cond.T);
+  if (a.covered) return "";
+  return `<div class="note"><p><b>目前模型未涵蓋此區域。</b>模型只涵蓋北緯 ${s.feed.grid.lat_min}–${s.feed.grid.lat_max}°、東經 ${s.feed.grid.lon_min}–${s.feed.grid.lon_max}°。可以改看「全區」，或到地圖換一個位置。</p></div>`;
 }
 
 function notesBox(s: State) {
@@ -40,21 +58,103 @@ function notesBox(s: State) {
   return n.length ? `<div class="note">${n.map((x) => `<p>⚠ ${esc(x)}</p>`).join("")}</div>` : "";
 }
 
+const layerSeg = (s: State) =>
+  `<div class="seg sm"><button class="${s.mapLayer === "p" ? "on" : ""}" data-layer="p">機率</button><button class="${s.mapLayer === "ratio" ? "on" : ""}" data-layer="ratio">和平常比</button></div>`;
+
+// 地圖上的按鈕圖示（24×24 線條）
+const ICON = {
+  full: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  exitFull: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5",
+  layers: "M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5",
+  locate: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3",
+};
+const mapBtn = (act: string, icon: string, label: string) =>
+  `<button class="mbtn" data-act="${act}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24"><path d="${icon}"/></svg></button>`;
+
+/**
+ * 地圖下方卡片的數字：圓內的評估＋圓心所在那一格的原始值。
+ * 獨立成函式是因為拖半徑滑桿時要即時更新這一塊（不重畫整頁）。
+ */
+export function pickNumbers(s: State, radiusKm = s.cond.radiusKm): string {
+  const f = s.feed, c = s.cond;
+  const a = assessPoint(f, s.place.lat, s.place.lon, radiusKm, c.m, c.T);
+  if (!a.covered) return `<p class="pick-none">目前模型未涵蓋此區域</p><p class="muted small">模型只涵蓋北緯 ${f.grid.lat_min}–${f.grid.lat_max}°、東經 ${f.grid.lon_min}–${f.grid.lon_max}°。</p>`;
+  const lv = levelOf(a.ratio);
+  const i = cellIndexAt(f, s.place.lat, s.place.lon);
+  let cell = "";
+  if (i >= 0) {
+    // 這一格的數字永遠取模型原始值，不受地圖平滑化影響
+    const p = cellProbabilities(f, c.m, c.T, "full")[i], pb = cellProbabilities(f, c.m, c.T, "bg")[i];
+    cell = `<div class="pick-row"><label>圓心這一格（${f.grid.deg}°）</label><span>現在 ${pct(p)}・平常 ${pct(pb)}</span></div>`;
+  }
+  const part = a.coverage < FULL_COVERAGE ? `<p class="muted small">範圍約 ${Math.round((1 - a.coverage) * 100)}% 在模型網格外，未計入。</p>` : "";
+  return `
+    <div class="pick-row main"><label>圓內・M${c.m}+・${timeLabel(c.T)}內</label>
+      <span><b>${pct(a.p)}</b>・平常 ${pct(a.pBg)}・<b class="${lv.key}">${ratioText(a.ratio)}</b></span></div>
+    ${cell}${part}`;
+}
+
+function pickCard(s: State) {
+  const r = s.cond.radiusKm;
+  return `
+  <div class="pick">
+    <div class="pick-head">
+      <div class="pick-place"><b>${esc(s.place.label)}</b>${s.place.detail ? `<small>${esc(s.place.detail)}</small>` : ""}</div>
+      <span class="muted small">點地圖換中心</span>
+    </div>
+    <label class="pick-radius"><span>半徑</span>
+      <input type="range" min="${RADIUS_MIN}" max="${RADIUS_MAX}" step="${RADIUS_STEP}" value="${r}" data-range="radius" aria-label="半徑（公里）">
+      <output id="radius-out">${r} km</output></label>
+    <div id="pick-nums">${pickNumbers(s)}</div>
+  </div>`;
+}
+
 function viewMap(s: State) {
   return `
   <div class="ctls">
     <div class="ctl"><label>規模</label>${seg("m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m)}</div>
     <div class="ctl"><label>時間</label>${seg("T", TIMES, s.cond.T)}</div>
-    <div class="ctl"><label>顯示</label>
-      <div class="seg sm"><button class="${s.mapLayer === "p" ? "on" : ""}" data-layer="p">機率</button><button class="${s.mapLayer === "ratio" ? "on" : ""}" data-layer="ratio">和平常比</button></div></div>
   </div>
-  <div id="map" class="map"></div>
-  <div class="legend" id="legend"></div>
-  <p class="muted small">點格子看數字。圓點是最近 30 天的地震（大小＝規模）。網格 0.2°（約 20 km）。</p>
+  <div class="mapwrap ${s.mapFull ? "full" : ""}">
+    <div class="mapbox">
+      <div id="map" class="map"></div>
+      <div class="map-layer">${layerSeg(s)}</div>
+      <div class="map-btns">
+        ${mapBtn("map-full", s.mapFull ? ICON.exitFull : ICON.full, s.mapFull ? "離開全螢幕" : "全螢幕")}
+        ${mapBtn("layers", ICON.layers, "底圖與平滑")}
+        ${mapBtn("map-locate", ICON.locate, "移到我的位置")}
+      </div>
+      <div class="map-note" id="map-note" hidden></div>
+    </div>
+    <div class="legend" id="legend"></div>
+    ${pickCard(s)}
+  </div>
+  <p class="muted small">圓點是最近 30 天的地震（大小＝規模），點它看詳細。模型網格 0.2°（約 20 km）${s.smooth ? "；目前開了平滑，那只是顯示效果，數字仍以原始格子為準" : ""}。</p>
   ${notesBox(s)}`;
 }
 
+/** 地圖設定面板：平滑與底圖；全螢幕時上方的條件列被蓋住，所以這裡也放規模與時間（「機率／和平常比」的切換直接浮在地圖左上角） */
+export function renderLayersSheet(s: State): string {
+  const cur = resolveBasemap(s.basemap).id;
+  const opts = BASEMAPS.map((b) =>
+    usable(b)
+      ? `<button class="opt ${b.id === cur ? "on" : ""}" data-basemap="${b.id}"><b>${esc(b.name)}</b><small>${esc(b.note)}</small></button>`
+      : `<button class="opt need" data-act="need-carto"><b>${esc(b.name)}</b><small>需要金鑰：點這裡到 ⓘ 頁設定</small></button>`,
+  ).join("");
+  return `
+  <div class="sheet-head"><h2>地圖設定</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
+  <div class="field"><label>平滑（只是顯示效果，模型解析度仍是 ${s.feed.grid.deg}°）</label><div class="seg">
+    ${SMOOTH_LABELS.map((l, i) => `<button class="${i === s.smooth ? "on" : ""}" data-smooth="${i}">${l}</button>`).join("")}
+  </div></div>
+  ${s.mapFull ? `
+  <div class="field"><label>規模</label><div class="seg">${MAGS.map((m) => `<button class="${m === s.cond.m ? "on" : ""}" data-cond="m" data-v="${m}">M${m}+</button>`).join("")}</div></div>
+  <div class="field"><label>時間</label><div class="seg">${TIMES.map(([v, l]) => `<button class="${Math.abs(v - s.cond.T) < 1e-9 ? "on" : ""}" data-cond="T" data-v="${v}">${l}</button>`).join("")}</div></div>` : ""}
+  <div class="field"><label>底圖</label><div class="opts">${opts}</div></div>`;
+}
+
 function viewMag(s: State) {
+  const blocked = uncoveredBox(s);
+  if (blocked) return `<div class="ctls">${scopeCtl(s)}</div><h3 class="vh">固定地點＋時間，看規模</h3>${blocked}`;
   const f = s.feed, w = weights(s);
   const nF = regionRef(f, w, s.cond.T, "full"), nB = regionRef(f, w, s.cond.T, "bg");
   const mags: number[] = [];
@@ -86,6 +186,8 @@ function viewMag(s: State) {
 }
 
 function viewTime(s: State) {
+  const blocked = uncoveredBox(s);
+  if (blocked) return `<div class="ctls">${scopeCtl(s)}</div><h3 class="vh">固定地點＋規模，看時間</h3>${blocked}`;
   const f = s.feed, w = weights(s);
   const Ts: number[] = [];
   for (let e = Math.log10(1 / 24); e <= Math.log10(30) + 1e-9; e += 0.05) Ts.push(10 ** e);

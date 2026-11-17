@@ -24,6 +24,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # 測試或建置檢查（scripts/check-dist.mjs）沒過就停在這裡，不會部署
+      - run: npm test
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
