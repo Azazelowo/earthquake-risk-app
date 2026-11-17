@@ -27,6 +27,10 @@ jobs:
       # 測試或建置檢查（scripts/check-dist.mjs）沒過就停在這裡，不會部署
       - run: npm test
       - run: npm run build
+        env:
+          # CARTO 底圖金鑰（使用者決定內建，2026-11-17）。會出現在公開網站的 JS 裡，
+          # 靠 CARTO 後台的網域限制（azazelowo.github.io）保護。沒設 secret 時是空字串，CARTO 選項顯示「需要金鑰」。
+          VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
