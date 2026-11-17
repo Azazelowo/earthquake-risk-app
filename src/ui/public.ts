@@ -3,7 +3,8 @@
 import type { State, Cond } from "../state";
 import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
 import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
-import { levelOf, pct, odds, ratioText, twTime, ago, esc } from "../format";
+import { levelOf, pct, odds, ratioText, twTime, ago, esc, distText } from "../format";
+import { COARSE_M } from "../geo/towns";
 import { pwa } from "../pwa";
 import { conditionNotes } from "./info";
 
@@ -40,6 +41,12 @@ function locButton(s: State): string {
       <svg viewBox="0 0 24 24" class="ico"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
       <span class="loc-t"><b>${main}</b>${sub ? `<small class="${subCls}">${sub}</small>` : ""}</span><span class="chev">▾</span>
     </button>`;
+}
+
+/** 定位誤差很大時（多半是電腦）提醒可以自己選位置；數字仍用定位到的座標計算 */
+function coarseHint(s: State): string {
+  if (s.place.source !== "gps" || s.locate === "pending" || !((s.place.accuracyM ?? 0) > COARSE_M)) return "";
+  return `<p class="lv-hint coarse">這台裝置的定位誤差有${esc(distText(s.place.accuracyM!))}（電腦或室內常見），位置可能不對。<a href="#/expert/map">在地圖上點選</a>，或點上方選縣市。</p>`;
 }
 
 /** 安裝提示：只在「還沒安裝、而且這台裝置裝得起來」時出現在頁面最下方，可以關掉 */
@@ -91,7 +98,7 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
 
   return `
   <section class="loc-row">
-    ${locButton(s)}
+    ${locButton(s)}${coarseHint(s)}
     <button class="cond" data-act="edit-cond">${condText(c)}<span class="chev">調整</span></button>
   </section>
   ${status}

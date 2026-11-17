@@ -107,9 +107,9 @@ describe("地標", () => {
   });
 
   it("定位誤差大到涵蓋別的鄉鎮區時改說「附近」", () => {
-    const r = at(25.034, 121.5645, 5000);
+    const r = at(25.034, 121.5645, 1500);
     expect(r.label).toBe("臺北市信義區附近");
-    expect(r.detail).toBe("定位誤差約 5.0 公里");
+    expect(r.detail).toBe("定位誤差約 1.5 公里");
     expect(r.confident).toBe(false);
   });
 
@@ -126,5 +126,27 @@ describe("地標", () => {
     const farSea = at(23.9, 122.2);
     expect(farSea.label).toBe("23.90°N, 122.20°E");
     expect(farSea.confident).toBe(false);
+  });
+});
+
+describe("定位誤差很大時（電腦用 Wi-Fi／網路定位）", () => {
+  // 三民區內的一點：電腦把楠梓的人定位到這裡，誤差回報好幾公里
+  const SANMIN = [22.65, 120.32] as const;
+
+  it("誤差小時照常講到鄉鎮區", () => {
+    expect(describePlace(idx, ...SANMIN, 30).label).toBe("高雄市三民區");
+  });
+
+  it("誤差超過 2 公里只講縣市，並標示可能不準", () => {
+    const r = describePlace(idx, ...SANMIN, 5000);
+    expect(r.label).toBe("高雄市");
+    expect(r.detail).toContain("可能不準");
+    expect(r.confident).toBe(false);
+  });
+
+  it("誤差範圍跨好幾個縣市時，縣市也加「附近」", () => {
+    const r = describePlace(idx, 23.0, 120.25, 30_000); // 臺南、高雄交界一帶，誤差 30 公里
+    expect(r.label).toMatch(/^.+[市縣]附近$/);
+    expect(r.confident).toBe(false);
   });
 });

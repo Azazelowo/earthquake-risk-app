@@ -184,6 +184,9 @@ function coordText(lat: number, lon: number): string {
  * 判斷方式：把「定位誤差＋界線簡化誤差」當成不確定半徑，半徑內只有一個鄉鎮區才直接講名字；
  * 半徑內還有別的鄉鎮區（在交界附近），或點落在海上，就加「附近」。
  */
+/** 定位誤差超過這個值（公尺）就只說縣市，並提醒可能不準、可以改用地圖選點 */
+export const COARSE_M = 2000;
+
 export function describePlace(idx: TownIndex, lat: number, lon: number, accuracyM?: number): PlaceText {
   const acc = accuracyM !== undefined && accuracyM > 0 ? accuracyM : 0;
   const uncertain = acc + idx.toleranceM;
@@ -192,6 +195,13 @@ export function describePlace(idx: TownIndex, lat: number, lon: number, accuracy
   if (!near.length) return { label: coordText(lat, lon), detail: "不在臺灣的鄉鎮市區範圍內", confident: false };
 
   const first = near[0];
+  // 定位誤差太大（電腦沒有 GPS，只能用 Wi-Fi／網路估計，常差好幾公里）：不講鄉鎮區，只講縣市，
+  // 誤差範圍跨好幾個縣市時連縣市都加「附近」。寧可模糊，不要講錯（例：人在楠梓卻顯示三民區）。
+  if (acc > COARSE_M) {
+    const counties = new Set(near.filter((t) => t.distM <= uncertain).map((t) => t.town.county));
+    const county = first.town.county;
+    return { label: counties.size <= 1 ? county : `${county}附近`, detail: `${accText}・可能不準`, confident: false };
+  }
   const name = first.town.county + first.town.name;
   if (first.distM === 0) {
     const neighbour = near.find((t) => t.distM > 0 && t.distM <= uncertain);
