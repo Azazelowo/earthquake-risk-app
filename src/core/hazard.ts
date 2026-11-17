@@ -1,4 +1,4 @@
-// 機率計算核心：對應破專題 app/hazard_core.py。之後會加「同一組輸入，TS 與 Python 結果一致」的對照測試。
+// 機率計算核心：對應破專題 app/hazard_core.py。兩邊結果一致由 parity.test.ts 檢查（相對誤差 < 1e-9）。
 import type { Feed, BacktestRow } from "../data/schema";
 
 export const KM_PER_DEG = 111.195;

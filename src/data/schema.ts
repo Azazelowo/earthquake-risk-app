@@ -1,4 +1,4 @@
-// 前端資料格式（feed.json）。破專題 repo 每小時由 GitHub Actions 產生；雛型階段由 mock.ts 產生同格式的假資料。
+// 前端資料格式（feed.json）。破專題 repo 每 15 分鐘由 GitHub Actions 產生；雛型階段由 mock.ts 產生同格式的假資料。
 // 設計原則：後端只給「每格、每個時間長度在 M≥m_ref 的期望數」，規模換算與範圍加總在手機上算（很輕）。
 
 export interface Feed {

@@ -22,6 +22,8 @@ export interface Cond {
 
 export type Locate = "idle" | "pending" | "denied" | "ok";
 
+import type { Quake } from "./data/exptech";
+
 export interface State {
   feed: Feed;
   place: Place;
@@ -37,6 +39,8 @@ export interface State {
   mapFull: boolean;
   /** 資料從哪裡來：loading＝第一次下載中；network＝最新；cache＝上次成功的資料（離線或下載失敗）；mock＝示意用假資料 */
   feedStatus?: { origin: "loading" | "network" | "cache" | "mock"; error: string | null };
+  /** 即時地震列表（ExpTech 地震報告，只顯示、不進入風險計算）；不儲存 */
+  quakes?: { status: "loading" | "ok" | "error"; list: Quake[]; error: string | null; at: number | null };
 }
 
 /** 金門、連江在模型網格（21–26°N、119–123°E）外 */

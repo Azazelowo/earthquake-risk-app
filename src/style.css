@@ -341,3 +341,13 @@ html.modal-open, html.map-full { overflow: hidden; }
 .opt.on b { color: var(--accent); }
 .opt.need { border-style: dashed; }
 .opt.need b { color: var(--muted); }
+
+/* 即時地震列表（更多 → 最近的地震） */
+.tbl-wrap { overflow-x: auto; }
+.tbl.quakes td { vertical-align: top; }
+.tbl.quakes .q-time { width: 4.2em; }
+.tbl.quakes .q-num { white-space: nowrap; }
+.tbl.quakes .q-loc { font-size: 12px; line-height: 1.4; }
+.tbl.quakes .q-loc small { display: block; color: var(--muted); }
+.card .credit { font-size: 11px; color: var(--muted); margin: 4px 0 0; }
+.card.errcard { border-color: var(--warn); }

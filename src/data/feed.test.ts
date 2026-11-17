@@ -95,9 +95,9 @@ describe("loadFeed 的退回順序", () => {
 });
 
 describe("過期判斷", () => {
-  it("超過 2 小時才算過期；假資料不算", () => {
+  it("超過 1 小時才算過期（每 15 分鐘發布）；假資料不算", () => {
     const f = { ...real(), issued_at: "2026-11-17T10:00:00Z" };
-    expect(staleHours(f, Date.parse("2026-11-17T11:30:00Z"))).toBeNull();
+    expect(staleHours(f, Date.parse("2026-11-17T10:50:00Z"))).toBeNull();
     expect(staleHours(f, Date.parse("2026-11-17T13:00:00Z"))).toBeCloseTo(3, 6);
     expect(staleHours({ ...f, mock: true }, Date.parse("2026-11-20T00:00:00Z"))).toBeNull();
   });

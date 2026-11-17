@@ -1,6 +1,6 @@
 # 設計書（v0.3：Phase 2 真資料）
 
-> 狀態：**Phase 2 已實作（2026-11-17）**：APP 讀破專題每小時發布的 `feed.json`（v1.1 模型），執行時驗證、離線退回上次資料、超過 2 小時標示過期。破專題端的排程要等該 repo 推送並設定 `CWA_API_KEY` Secret 後才會開始跑；在那之前 APP 會顯示「無法取得模型資料」並使用示意資料。
+> 狀態：**Phase 2 已實作（2026-11-17）**：APP 讀破專題每 15 分鐘發布的 `feed.json`（v1.1 模型），執行時驗證、離線退回上次資料、超過 1 小時標示過期；「更多 → 最近的地震」由手機直接讀 ExpTech 地震報告（只顯示、不進入風險計算）。破專題端的排程要等該 repo 推送並設定 `CWA_API_KEY` Secret 後才會開始跑；在那之前 APP 會顯示「無法取得模型資料」並使用示意資料。
 >
 > 開發順序：**1 PWA／免責／定位／地圖（本版）** → 2 真資料＋更新流程＋Py/TS 一致 → 3 餘震、排行榜、掃描器、地震列表 → 4 滑桿、收藏、分享 → 5 `?q=` 串接、歷史頁。
 
@@ -178,7 +178,13 @@ repo 與網站都不含金鑰。程式也支援建置時的 `VITE_CARTO_KEY`（�
 
 ## 10. 之後的步驟
 
-1. **Phase 2（已實作）**：破專題 `app/export_feed.py`＋`.github/workflows/hourly-feed.yml`（每小時、推到 feed 分支）；APP `src/data/feed.ts`（驗證、快取、退回、過期標示）。已在本機確認 Python 產生的 feed 通過 `validateFeed`。**尚未做**：完整的 TS／Python 數值一致性測試（相對誤差 < 1e-9）、ExpTech 資料源。
+1. **Phase 2（已實作）**：架構（2026-11-17 使用者確認）——
+   - **風險數值**：破專題 `app/live_update.py`＋`app/export_feed.py`，`.github/workflows/hourly-feed.yml` 每 15 分鐘用氣象署開放資料（`CWA_API_KEY` Secret）＋USGS 重算、推到 feed 分支。金鑰只在 Actions，不進前端。不用 ExpTech 算風險：條款要求使用者直連、不得經自己的伺服器轉發，TREM 也不得用於預測。
+   - **地震列表**：手機直接呼叫 ExpTech `/api/v2/eq/report`（免 Token、CORS 開放，三台主機依序備援），標示「資料來源：中央氣象署、ExpTech Studio（exptech.dev）」；連不上就用 feed 裡的地震。請求不帶位置。
+   - **USGS**：只當 Actions 的補充來源（M4 以上），不直接給手機。
+   - APP `src/data/feed.ts`（驗證、快取、退回、過期標示）、`src/data/exptech.ts`、畫面出錯時顯示錯誤卡片而非空白（審查 H3）。
+   - **TS／Python 一致性**：`src/core/parity.test.ts` 讀破專題 `app/export_parity.py` 產生的對照資料，相對誤差 < 1e-9。
+   - **尚未做**：實機（Android／iPhone）測試；破專題分支推送、設 Secret、第一次手動執行。
 2. **Phase 3**：餘震機率預估、首頁「目前全台風險排行榜」、條件掃描器（依倍數排序、只收 p≥1%）、地震列表。
 3. 用回測統計定狀態門檻。
 4. 「我也會地震預測」加 `?q=`（仍經輸入把關與確認卡，不自動送出）。

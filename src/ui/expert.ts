@@ -9,6 +9,7 @@ import {
 import { lineChart } from "./chart";
 import { pct, ratioText, twTime, esc, levelOf } from "../format";
 import { LEVEL_EDGES } from "../format";
+import { EXPTECH_CREDIT, quakeRow } from "../data/exptech";
 import { BASEMAPS, resolveBasemap, usable } from "./basemaps";
 
 export type ExpertTab = "map" | "mag" | "time" | "verify" | "more";
@@ -267,6 +268,28 @@ P(範圍)     = 1 − exp(−N(範圍))                卜瓦松：至少一次<
   </div></details>`;
 }
 
+const msTime = (ms: number) => twTime(new Date(ms).toISOString());
+
+/**
+ * 最近的地震：優先用 ExpTech 即時地震報告（手機直接連線）；連不上就用 feed 裡模型用到的地震（最多慢 15 分鐘）。
+ * 列表只是「已經發生的地震」，不是預測；新地震要等下一次 feed 更新才會反映到風險數字上。
+ */
+function recentCard(s: State) {
+  const q = s.quakes;
+  if (q && q.list.length) {
+    const head = `<tr><th>時間</th><th>規模</th><th>最大震度</th><th>地點</th></tr>`;
+    return `<div class="card"><b>最近的地震</b>
+      <p class="muted small">中央氣象署地震報告，含震度 0 的小地震。這是已經發生的地震，不是預測；風險數字每 15 分鐘更新一次，最新的地震可能還沒算進去。${q.status === "error" ? `<br>目前無法更新（${esc(q.error ?? "原因不明")}），顯示 ${esc(msTime(q.at ?? Date.now()))} 取得的列表。` : ""}</p>
+      <div class="tbl-wrap"><table class="tbl quakes"><thead>${head}</thead><tbody>${q.list.slice(0, 30).map((e) => quakeRow(e, msTime)).join("")}</tbody></table></div>
+      <p class="credit">${esc(EXPTECH_CREDIT)}</p></div>`;
+  }
+  const note = !q || q.status === "loading" ? "正在取得即時地震報告…" : `無法取得即時地震報告（${esc(q.error ?? "原因不明")}），以下是模型資料裡的地震（規模 3 以上，最多慢 15 分鐘）。`;
+  return `<div class="card"><b>最近的地震</b><p class="muted small">${note}</p>
+      <table class="tbl"><thead><tr><th>時間</th><th>規模</th><th>深度</th><th>來源</th></tr></thead><tbody>
+      ${s.feed.recent.slice(0, 8).map((e) => `<tr><td>${twTime(e.time)}</td><td>${Number(e.ml).toFixed(1)}</td><td>${esc(String(e.depth_km))} km</td><td>${esc(e.source)}</td></tr>`).join("")}
+      </tbody></table></div>`;
+}
+
 function viewMore(s: State) {
   return `
   <h3 class="vh">更多</h3>
@@ -274,10 +297,7 @@ function viewMore(s: State) {
     <div class="card dim"><b>歷史回放</b><p>選一個過去的日子（例如 2024-04-03 花蓮地震前後），看當時模型怎麼說。<span class="tag">之後做</span></p></div>
     <div class="card"><b>資料下載</b><p>目前畫面用的整份資料（JSON，每格 10 個時間長度的期望數）。</p>
       <button class="btn" data-act="download">下載 feed.json</button></div>
-    <div class="card"><b>最近的地震</b>
-      <table class="tbl"><thead><tr><th>時間</th><th>規模</th><th>深度</th><th>來源</th></tr></thead><tbody>
-      ${s.feed.recent.slice(0, 8).map((e) => `<tr><td>${twTime(e.time)}</td><td>${Number(e.ml).toFixed(1)}</td><td>${esc(String(e.depth_km))} km</td><td>${esc(e.source)}</td></tr>`).join("")}
-      </tbody></table></div>
+    ${recentCard(s)}
     <div class="card"><b>參考資料</b>
       <ul class="refs">
         <li><a href="https://scweb.cwa.gov.tw/" target="_blank" rel="noopener">中央氣象署 地震測報中心</a></li>

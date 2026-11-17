@@ -5,6 +5,7 @@
 import "./style.css";
 import { makeMockFeed } from "./data/mock";
 import { cachedFeed, loadFeed, staleHours } from "./data/feed";
+import { fetchQuakes } from "./data/exptech";
 import type { State, Cond, Place } from "./state";
 import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty } from "./state";
 import { distText, esc, twTime } from "./format";
@@ -85,7 +86,7 @@ function render() {
 
   detachMap();
   document.documentElement.classList.toggle("map-full", s.mapFull);
-  const body = info ? renderInfo(s, lastMain) : expert ? renderExpert(s, r.tab) : renderPublic(s, { installHint });
+  const body = safely(() => (info ? renderInfo(s, lastMain) : expert ? renderExpert(s, r.tab) : renderPublic(s, { installHint })));
   app.innerHTML = `
   <header class="top">
     <a class="brand" href="#/"><img src="./icon.svg" alt=""><span>臺灣地震風險評估</span></a>
@@ -104,13 +105,29 @@ function render() {
   <div class="sheet ${sheet ? "show" : ""}">${sheet === "place" ? renderPlaceSheet(s) : sheet === "cond" ? renderCondSheet(s) : sheet === "layers" ? renderLayersSheet(s) : ""}</div>`;
   renderedHash = location.hash;
 
-  if (onMap) mountMap(s, { onPick: pickOnMap });
+  if (onMap) safely(() => mountMap(s, { onPick: pickOnMap }));
   app.querySelectorAll("details").forEach((d, i) => {
     if (folds[i]) d.open = true;
   });
   const keyEl = document.getElementById("carto-key") as HTMLInputElement | null;
   if (keyEl && keyDraft) keyEl.value = keyDraft;
   if (focusSel) app.querySelector<HTMLElement>(focusSel)?.focus({ preventScroll: true });
+}
+
+/**
+ * 畫面程式出錯時不要整頁空白（審查 H3）：顯示錯誤卡片，標題列、模式切換、ⓘ 頁仍然可以用。
+ * 常見原因是資料和程式版本不合；重新整理通常就會取得一致的版本。
+ */
+function safely<T>(fn: () => T): T | string {
+  try {
+    return fn();
+  } catch (e) {
+    console.error(e);
+    return `<div class="card errcard" role="alert"><b>這個畫面暫時無法顯示</b>
+      <p>可能是資料和程式版本不一致。請重新整理；如果一直出現，請到 ⓘ 頁查看資料狀態。這不代表地震風險有變化。</p>
+      <p class="muted small">${esc((e instanceof Error ? e.message : String(e)).slice(0, 200))}</p>
+      <button class="btn" type="button" data-act="reload">重新整理</button></div>`;
+  }
 }
 
 /** 畫面最上方的資料狀態提示：假資料、離線、過期都要讓人一眼看到（審查 S-12、NFR-R4） */
@@ -123,8 +140,21 @@ function feedBar(): string {
   const h = staleHours(f);
   if (st?.origin === "cache")
     return `<div class="mockbar">${h ? "資料已過期・" : ""}目前顯示上次取得的資料（${twTime(f.issued_at)} 發布）${st.error ? `：${esc(st.error)}` : ""}</div>`;
-  if (h) return `<div class="mockbar">資料已 ${Math.round(h)} 小時沒有更新（最後發布 ${twTime(f.issued_at)}），數字可能過時</div>`;
+  if (h) return `<div class="mockbar">資料已 ${h < 48 ? `${Math.round(h)} 小時` : `${Math.round(h / 24)} 天`}沒有更新（最後發布 ${twTime(f.issued_at)}），數字可能過時</div>`;
   return "";
+}
+
+/** 即時地震列表（ExpTech）；失敗時保留上次的列表 */
+async function refreshQuakes() {
+  try {
+    const list = await fetchQuakes();
+    s.quakes = { status: "ok", list, error: null, at: Date.now() };
+  } catch (e) {
+    const prev = s.quakes;
+    s.quakes = { status: "error", list: prev?.list ?? [], error: e instanceof Error && e.name !== "TypeError" ? e.message : "無法連線", at: prev?.at ?? null };
+  }
+  // 只有正在看列表時才重畫，避免打斷其他畫面的操作
+  if (location.hash.startsWith("#/expert/more")) render();
 }
 
 /** 下載最新資料後重畫；失敗時 loadFeed 會退回上次的資料或假資料 */
@@ -223,6 +253,7 @@ app.addEventListener("click", (ev) => {
   else if (d.act === "map-full") s.mapFull = !s.mapFull;
   else if (d.act === "reset-cond") s.cond = { ...DEFAULT_COND };
   else if (d.act === "download") return download();
+  else if (d.act === "reload") return location.reload();
   else if (d.act === "show-disclaimer") return void showDisclaimer(s.feed.mock, true);
   else if (d.act === "install") return void promptInstall();
   else if (d.act === "check-update") return void checkUpdate();
@@ -311,9 +342,17 @@ window.addEventListener("hashchange", () => {
 });
 // 連線狀態改變時更新地圖上的提示（離線時沒有底圖）
 for (const type of ["online", "offline"]) window.addEventListener(type, () => render());
-// 恢復連線時馬上更新；開著不動時每 15 分鐘檢查一次（資料每小時更新）
-window.addEventListener("online", () => void refreshFeed());
-setInterval(() => void refreshFeed(), 15 * 60e3);
+// 恢復連線時馬上更新；開著不動時每 5 分鐘檢查 feed（每 15 分鐘發布）、每 2 分鐘檢查地震列表。
+// 畫面在背景時不抓，回到前景時補抓一次。
+window.addEventListener("online", () => {
+  void refreshFeed();
+  void refreshQuakes();
+});
+setInterval(() => document.visibilityState === "visible" && void refreshFeed(), 5 * 60e3);
+setInterval(() => document.visibilityState === "visible" && void refreshQuakes(), 2 * 60e3);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - (s.quakes?.at ?? 0) > 60e3) void refreshQuakes();
+});
 
 // ---------- 啟動 ----------
 
@@ -326,6 +365,7 @@ initPwa(() => {
 // 先看完使用前說明再要求定位，避免說明視窗和瀏覽器的定位詢問同時跳出來。
 // 第一次開、或上次用 GPS：自動定位；使用者選過縣市或地圖選點就尊重他的選擇。
 // 先下載資料（最多 10 秒）再顯示使用前說明，說明的內容才會對應「真資料」或「假資料」
+void refreshQuakes();
 void refreshFeed()
   .then(() => showDisclaimer(s.feed.mock))
   .then(() => {

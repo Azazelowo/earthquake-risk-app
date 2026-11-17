@@ -1,6 +1,6 @@
 // 讀取真資料 feed.json：下載 → 驗證 → 存一份在本機；失敗時依序退回「上次成功的資料」、「示意用假資料」。
 //
-// 為什麼要在執行時驗證：TypeScript 的型別只在編譯時檢查。feed.json 是外部檔案（每小時由破專題的
+// 為什麼要在執行時驗證：TypeScript 的型別只在編譯時檢查。feed.json 是外部檔案（每 15 分鐘由破專題的
 // GitHub Actions 產生），欄位缺少或型別錯誤時，畫面會在任意位置丟出例外；字串欄位若被塞進 HTML，
 // 還可能變成 XSS。所以載入時先把整份資料檢查一遍，不合格就不用（審查 H1、H2）。
 import type { BacktestRow, DataStatus, Feed, RecentEvent } from "./schema";
@@ -11,8 +11,8 @@ export const FEED_URL: string =
   import.meta.env.VITE_FEED_URL || "https://raw.githubusercontent.com/Azazelowo/earthquake-risk-project/feed/feed.json";
 const CACHE_KEY = "eqrisk.feed";
 const FETCH_TIMEOUT_MS = 10_000;
-/** 超過這麼久沒更新就標成「已過期」：每小時更新，留一次失敗的餘裕 */
-export const STALE_HOURS = 2;
+/** 超過這麼久沒更新就標成「已過期」：每 15 分鐘更新，但 GitHub 排程常延遲，留約三次失敗的餘裕 */
+export const STALE_HOURS = 1;
 
 export type FeedOrigin = "network" | "cache" | "mock";
 export interface LoadedFeed {
