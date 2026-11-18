@@ -17,6 +17,7 @@ import { showDisclaimer } from "./ui/disclaimer";
 import { DEFAULT_BASEMAP, setCartoKey } from "./ui/basemaps";
 import { loadTowns, loadedTowns, describePlace } from "./geo/towns";
 import { pickMainshock } from "./core/aftershock";
+import { RANK_RADIUS_KM } from "./core/scan";
 import { initPwa, promptInstall, checkUpdate, applyUpdate } from "./pwa";
 
 const saved = loadSaved();
@@ -264,7 +265,7 @@ const clampRadius = (v: number) => Math.min(Math.max(Math.round(v), RADIUS_MIN),
 
 app.addEventListener("click", (ev) => {
   const t = (ev.target as HTMLElement).closest<HTMLElement>(
-    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-basemap],[data-smooth]",
+    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-basemap],[data-smooth]",
   );
   if (!t) return;
   const d = t.dataset;
@@ -313,6 +314,14 @@ app.addEventListener("click", (ev) => {
   else if (d.apply) {
     if (d.goto) return void (location.hash = d.goto);
     s.cond = { ...s.cond, ...JSON.parse(d.apply) };
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } else if (d.rank) {
+    // 全台排行的一項：換成那個縣市（周圍 50 km）和那組規模、時間
+    const c = COUNTIES.find((x) => x.name === d.rank && !x.outside);
+    if (!c) return;
+    s.place = { lat: c.lat, lon: c.lon, label: c.name, source: "county" };
+    s.locate = "idle";
+    s.cond = { radiusKm: RANK_RADIUS_KM, m: +d.m!, T: +d.t! };
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   save(s);
