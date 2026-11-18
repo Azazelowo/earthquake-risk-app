@@ -47,7 +47,6 @@ export interface OutlookCell {
 }
 
 export interface AftershockOutlook {
-  quake: RecentEvent;
   radiusKm: number;
   /** false＝震央周圍不在模型範圍內（或大半在外），不能給數字 */
   covered: boolean;
@@ -57,18 +56,21 @@ export interface AftershockOutlook {
   rows: { m: number; cells: OutlookCell[] }[];
 }
 
-/** 震央周圍 radiusKm 內，各規模門檻 × 時間長度的「現在」與「平常」機率 */
-export function aftershockOutlook(feed: Feed, quake: RecentEvent, radiusKm = AFTERSHOCK_RADIUS_KM): AftershockOutlook {
-  const w = pointWeights(feed, quake.lat, quake.lon, radiusKm);
+/**
+ * 震央周圍 radiusKm 內，各規模門檻 × 時間長度的「現在」與「平常」機率。
+ * 震央可以是模型資料裡的地震（餘震卡），也可以是即時列表裡點開的地震——只用到經緯度。
+ */
+export function aftershockOutlook(feed: Feed, at: { lat: number; lon: number }, radiusKm = AFTERSHOCK_RADIUS_KM): AftershockOutlook {
+  const w = pointWeights(feed, at.lat, at.lon, radiusKm);
   let covered = true, coverage = 1;
   const rows = AFTERSHOCK_MAGS.map((m) => ({
     m,
     cells: AFTERSHOCK_TIMES.map((T) => {
-      const a = assessCircle(feed, w, quake.lat, quake.lon, radiusKm, m, T);
+      const a = assessCircle(feed, w, at.lat, at.lon, radiusKm, m, T);
       covered &&= a.covered;
       coverage = a.coverage;
       return { T, p: a.p, pBg: a.pBg, ratio: a.ratio };
     }),
   }));
-  return { quake, radiusKm, covered, coverage, rows };
+  return { radiusKm, covered, coverage, rows };
 }

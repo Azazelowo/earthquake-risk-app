@@ -7,9 +7,10 @@ import {
   assessPoint, cellIndexAt, cellProbabilities, FULL_COVERAGE,
 } from "../core/hazard";
 import { lineChart } from "./chart";
-import { pct, ratioText, twTime, esc, levelOf } from "../format";
+import { pct, ratioText, twTime, ago, esc, levelOf } from "../format";
 import { LEVEL_EDGES } from "../format";
-import { EXPTECH_CREDIT, quakeRow } from "../data/exptech";
+import { EXPTECH_CREDIT, intText, quakeRow, type Quake } from "../data/exptech";
+import { outlookSection } from "./outlook";
 import { BASEMAPS, resolveBasemap, usable } from "./basemaps";
 
 export type ExpertTab = "map" | "mag" | "time" | "verify" | "more";
@@ -270,24 +271,48 @@ P(範圍)     = 1 − exp(−N(範圍))                卜瓦松：至少一次<
 
 const msTime = (ms: number) => twTime(new Date(ms).toISOString());
 
+/** 這個地震會不會影響風險數字、而且還沒算進去：發生在資料發布之後，規模又到模型計數的門檻（m_ref） */
+export function notYetCounted(f: State["feed"], q: Quake): boolean {
+  return q.time > Date.parse(f.issued_at) && q.mag >= f.params.m_ref;
+}
+
 /**
  * 最近的地震：優先用 ExpTech 即時地震報告（手機直接連線）；連不上就用 feed 裡模型用到的地震（最多慢 15 分鐘）。
  * 列表只是「已經發生的地震」，不是預測；新地震要等下一次 feed 更新才會反映到風險數字上。
+ * 外層的 id 讓 main.ts 每 2 分鐘更新列表時只換這一塊，不必整頁重畫（審查 E4）。
  */
-function recentCard(s: State) {
-  const q = s.quakes;
+export function recentCard(s: State): string {
+  const q = s.quakes, f = s.feed;
   if (q && q.list.length) {
     const head = `<tr><th>時間</th><th>規模</th><th>最大震度</th><th>地點</th></tr>`;
-    return `<div class="card"><b>最近的地震</b>
-      <p class="muted small">中央氣象署地震報告，含震度 0 的小地震。這是已經發生的地震，不是預測；風險數字每 15 分鐘更新一次，最新的地震可能還沒算進去。${q.status === "error" ? `<br>目前無法更新（${esc(q.error ?? "原因不明")}），顯示 ${esc(msTime(q.at ?? Date.now()))} 取得的列表。` : ""}</p>
-      <div class="tbl-wrap"><table class="tbl quakes"><thead>${head}</thead><tbody>${q.list.slice(0, 30).map((e) => quakeRow(e, msTime)).join("")}</tbody></table></div>
+    return `<div class="card" id="recent-quakes"><b>最近的地震</b>
+      <p class="muted small">中央氣象署地震報告，含震度 0 的小地震。這是已經發生的地震，不是預測。<b>點一筆</b>可以看震央附近之後再發生地震的機率。</p>
+      <p class="muted small">風險數字每 15 分鐘更新；標「還沒算進風險數字」的地震發生在這次資料（${esc(twTime(f.issued_at))}）之後。規模 ${f.params.m_ref} 以下的地震不影響風險數字。${q.status === "error" ? `<br>目前無法更新（${esc(q.error ?? "原因不明")}），顯示 ${esc(msTime(q.at ?? Date.now()))} 取得的列表。` : ""}</p>
+      <div class="tbl-wrap"><table class="tbl quakes"><thead>${head}</thead><tbody>${q.list.slice(0, 30).map((e) => quakeRow(e, msTime, notYetCounted(f, e))).join("")}</tbody></table></div>
       <p class="credit">${esc(EXPTECH_CREDIT)}</p></div>`;
   }
   const note = !q || q.status === "loading" ? "正在取得即時地震報告…" : `無法取得即時地震報告（${esc(q.error ?? "原因不明")}），以下是模型資料裡的地震（規模 3 以上，最多慢 15 分鐘）。`;
-  return `<div class="card"><b>最近的地震</b><p class="muted small">${note}</p>
+  return `<div class="card" id="recent-quakes"><b>最近的地震</b><p class="muted small">${note}</p>
       <table class="tbl"><thead><tr><th>時間</th><th>規模</th><th>深度</th><th>來源</th></tr></thead><tbody>
-      ${s.feed.recent.slice(0, 8).map((e) => `<tr><td>${twTime(e.time)}</td><td>${Number(e.ml).toFixed(1)}</td><td>${esc(String(e.depth_km))} km</td><td>${esc(e.source)}</td></tr>`).join("")}
+      ${f.recent.slice(0, 8).map((e) => `<tr><td>${twTime(e.time)}</td><td>${Number(e.ml).toFixed(1)}</td><td>${esc(String(e.depth_km))} km</td><td>${esc(e.source)}</td></tr>`).join("")}
       </tbody></table></div>`;
+}
+
+/**
+ * 地震列表點開的面板：這個地震的基本資料，以及震央附近之後再發生地震的機率（和首頁餘震卡同一段畫面）。
+ * 地震發生在資料發布之後、而且規模會影響模型時，數字還沒反映它——這時不給數字，免得看起來「沒有升高」。
+ */
+export function renderQuakeSheet(s: State, q: Quake): string {
+  const f = s.feed;
+  const body = notYetCounted(f, q)
+    ? `<p class="as-note">這個地震發生在 ${esc(twTime(f.issued_at))} 的風險資料之後，風險數字還沒反映它，所以先不顯示機率。資料每 15 分鐘更新一次，之後再點開看。</p>`
+    : outlookSection(f, q);
+  return `
+  <div class="sheet-head"><h2>規模 ${q.mag.toFixed(1)} 的地震</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
+  <p class="qs-meta">${esc(msTime(q.time))}（${esc(ago(new Date(q.time).toISOString()))}）・最大震度 ${esc(intText(q.maxInt))}・深度 ${esc(String(Math.round(q.depth_km)))} 公里</p>
+  <p class="qs-loc">${esc(q.loc)}</p>
+  ${body}
+  <p class="as-foot">統計機率，不是地震預報；最新消息以中央氣象署為準。<br>${esc(EXPTECH_CREDIT)}</p>`;
 }
 
 function viewMore(s: State) {

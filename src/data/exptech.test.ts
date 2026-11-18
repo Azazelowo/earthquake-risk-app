@@ -53,3 +53,16 @@ describe("ExpTech 地震報告", () => {
     expect(n).toBe(1);
   });
 });
+
+describe("列表的一列", () => {
+  const q = parseQuake(REAL)!;
+  it("整列可以點（帶地震編號），預設不標「還沒算進」", () => {
+    const html = quakeRow(q, () => "11/17 22:28");
+    expect(html).toContain(`data-quake="${REAL.id}"`);
+    expect(html).toContain('role="button"');
+    expect(html).not.toContain("還沒算進");
+  });
+  it("pending 時加上「還沒算進風險數字」", () => {
+    expect(quakeRow(q, () => "", true)).toContain("還沒算進風險數字");
+  });
+});
