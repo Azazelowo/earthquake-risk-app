@@ -1,7 +1,7 @@
 // 不碰畫面的小邏輯：免責聲明何時顯示、本機儲存的清理、底圖與金鑰、距離文字。
 import { describe, expect, it } from "vitest";
 import { distText } from "./format";
-import { coarsen, placeShort, sanitize, type Place } from "./state";
+import { coarsen, placeShort, sanitize, sliderCond, sliderFromTime, timeFromSlider, timeLabel, validCond, DEFAULT_COND, M_MAX, RADIUS_MIN, TIMES, TIME_STEPS, T_MAX, T_MIN, type Place } from "./state";
 import { BASEMAPS, DEFAULT_BASEMAP, resolveBasemap, tileUrl, usable, validCartoKey } from "./ui/basemaps";
 import { DISCLAIMER_VERSION, disclaimerPoints, shouldShow } from "./ui/disclaimer";
 
@@ -87,5 +87,49 @@ describe("距離文字", () => {
     expect(distText(1530)).toBe("約 1.5 公里");
     expect(distText(23400)).toBe("約 23 公里");
     expect(distText(NaN)).toBe("");
+  });
+});
+
+describe("條件滑桿（Phase 4）", () => {
+  it("時間滑桿是對數刻度：兩端是 1 小時與 30 天，中間取到看得懂的精度", () => {
+    expect(timeFromSlider(0)).toBeCloseTo(1 / 24, 12);
+    expect(timeFromSlider(TIME_STEPS)).toBe(30);
+    expect(timeFromSlider(-50)).toBeCloseTo(1 / 24, 12);
+    expect(timeFromSlider(TIME_STEPS * 2)).toBe(30);
+    for (let v = 0; v <= TIME_STEPS; v += 37) {
+      const T = timeFromSlider(v);
+      expect(T).toBeGreaterThanOrEqual(T_MIN * (1 - 1e-12));
+      expect(T).toBeLessThanOrEqual(T_MAX);
+      expect(timeLabel(T)).toMatch(/^\d+(\.\d)? (小時|天)$/); // 不會出現 2.3456 天這種數字
+    }
+  });
+
+  it("位置和天數互相換算一致；越往右時間越長", () => {
+    for (const [T] of TIMES) expect(timeFromSlider(sliderFromTime(T))).toBeCloseTo(T, 9);
+    let prev = 0;
+    for (let v = 0; v <= TIME_STEPS; v += 10) {
+      const T = timeFromSlider(v);
+      expect(T).toBeGreaterThanOrEqual(prev);
+      prev = T;
+    }
+  });
+
+  it("半徑、規模夾在範圍內並取到刻度", () => {
+    const c = { ...DEFAULT_COND };
+    expect(sliderCond(c, "radius", 3).radiusKm).toBe(RADIUS_MIN);
+    expect(sliderCond(c, "radius", 999).radiusKm).toBe(200);
+    expect(sliderCond(c, "radius", 73).radiusKm).toBe(75);
+    expect(sliderCond(c, "mag", 5.349).m).toBe(5.3);
+    expect(sliderCond(c, "mag", 9).m).toBe(M_MAX);
+    expect(sliderCond(c, "mag", Number.NaN)).toEqual(c);
+    expect(sliderCond(c, "time", 0)).toMatchObject({ radiusKm: c.radiusKm, m: c.m });
+  });
+
+  it("本機存的條件超出範圍就不用（時間超過 30 天會讓整頁算不出來，審查 Q6）", () => {
+    expect(sanitize({ cond: { radiusKm: 50, T: 31, m: 5 } })).toEqual({});
+    expect(sanitize({ cond: { radiusKm: 50, T: 3, m: 9 } })).toEqual({});
+    expect(sanitize({ cond: { radiusKm: 50, T: 0.01, m: 5 } })).toEqual({});
+    expect(sanitize({ cond: { radiusKm: 150, T: 2.5, m: 6.7 } }).cond).toEqual({ radiusKm: 150, T: 2.5, m: 6.7 });
+    expect(validCond({ radiusKm: 200, T: 30, m: 8 })).toBe(true);
   });
 });

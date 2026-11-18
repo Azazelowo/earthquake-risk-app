@@ -3,6 +3,8 @@
 import type { State, Cond } from "../state";
 import type { Feed } from "../data/schema";
 import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
+import type { CondSlider } from "../state";
+import { condSliders } from "./sliders";
 import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
 import { pickMainshock, MAINSHOCK_RULES } from "../core/aftershock";
 import { outlookSection } from "./outlook";
@@ -265,19 +267,29 @@ export function renderPlaceSheet(s: State): string {
   <p class="muted small">金門、連江在模型網格（北緯 21–26°、東經 119–123°）外，暫不提供。</p>`;
 }
 
+// ---------- 條件滑桿（Phase 4） ----------
+
+/** 調整條件面板下方的即時預覽：拖滑桿時就看得到結果（首頁本身被面板蓋住） */
+export function condPreview(s: State, c: Cond): string {
+  const a = assessPoint(s.feed, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
+  const head = `<span class="cp-q">${esc(placeShort(s.place))}${esc(condText(c))}</span>`;
+  if (!a.covered) return `${head}<span class="cp-a"><b>目前模型未涵蓋此區域</b></span>`;
+  const v = isVerified(s.feed, c.m, c.T);
+  return `${head}<span class="cp-a">現在 <b>${pct(a.p)}</b>・平常 ${pct(a.pBg)}・<b class="${levelOf(a.ratio).key}">${ratioText(a.ratio)}</b>
+    <i class="cp-tag ${v ? "ok" : "ext"}">${v ? "已驗證範圍" : "外推估計"}</i></span>`;
+}
+
 export function renderCondSheet(s: State): string {
-  const row = (title: string, key: string, opts: [number, string][], cur: number) => `
+  const row = (title: string, key: string, opts: [number, string][], cur: number, slider: CondSlider) => `
     <div class="field"><label>${title}</label><div class="seg">
       ${opts.map(([v, l]) => `<button class="${Math.abs(v - cur) < 1e-9 ? "on" : ""}" data-cond="${key}" data-v="${v}">${l}</button>`).join("")}
-    </div></div>`;
-  // 半徑可能是在地圖上用滑桿調出來的任意值：多列一顆代表「目前的值」
-  const radii: [number, string][] = RADII.map((r) => [r, `${r} km`]);
-  if (!RADII.includes(s.cond.radiusKm)) radii.push([s.cond.radiusKm, `${s.cond.radiusKm} km`]), radii.sort((a, b) => a[0] - b[0]);
+    </div>${condSliders(s.cond, [slider])}</div>`;
   return `
   <div class="sheet-head"><h2>調整條件</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
-  ${row("範圍（以你為中心）", "radiusKm", radii, s.cond.radiusKm)}
-  <p class="muted small">想要其他半徑，可以到專家版的地圖用滑桿調整。</p>
-  ${row("時間", "T", TIMES, s.cond.T)}
-  ${row("規模", "m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m)}
+  ${row("範圍（以你為中心）", "radiusKm", RADII.map((r) => [r, `${r} km`]), s.cond.radiusKm, "radius")}
+  ${row("時間", "T", TIMES, s.cond.T, "time")}
+  ${row("規模", "m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m, "mag")}
+  <p class="cond-preview" id="cond-preview" aria-live="polite">${condPreview(s, s.cond)}</p>
+  <p class="muted small">按鈕是常用的值，滑桿可以細調。規模 6.5 以上回測樣本極少，標「外推估計」；範圍很大（例如 200 km）時有一部分在模型網格外，那部分不計入，ⓘ 頁會提醒。</p>
   <button class="btn wide" data-act="reset-cond">回到預設（50 km・3 天・M5）</button>`;
 }

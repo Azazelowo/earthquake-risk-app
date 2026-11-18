@@ -4,7 +4,8 @@ import { makeMockFeed } from "../data/mock";
 import type { Feed } from "../data/schema";
 import type { State } from "../state";
 import { DEFAULT_COND } from "../state";
-import { aftershockCard, rankCard, renderPublic } from "./public";
+import { aftershockCard, condPreview, rankCard, renderCondSheet, renderPublic } from "./public";
+import { renderExpert } from "./expert";
 
 const ISSUED = new Date("2026-11-18T00:30:00Z");
 
@@ -85,5 +86,39 @@ describe("全台排行", () => {
     s.place = { lat: 24.43, lon: 118.32, label: "金門縣", source: "county" };
     const html = renderPublic(s, { installHint: false });
     expect(html).toContain("目前模型未涵蓋此區域，沒有可以比較的條件");
+  });
+});
+
+describe("調整條件面板的滑桿（Phase 4）", () => {
+  it("三排預設按鈕都還在，每排下面有一條滑桿，範圍是 5–200 km、對數時間、M4–M8", () => {
+    const html = renderCondSheet(state(makeMockFeed(ISSUED)));
+    expect(html.match(/data-cond="radiusKm"/g)).toHaveLength(4);
+    expect(html).toMatch(/min="5" max="200" step="5" value="50" data-range="c-radius"/);
+    expect(html).toMatch(/min="0" max="1000" step="1" value="\d+" data-range="c-time"/);
+    expect(html).toMatch(/min="4" max="8" step="0.1" value="5" data-range="c-mag"/);
+    expect(html).toContain('id="cond-preview"');
+  });
+
+  it("預覽：網格內給數字與已驗證／外推標籤；M6.5 以上是外推估計", () => {
+    const s = state(makeMockFeed(ISSUED));
+    expect(condPreview(s, { radiusKm: 50, T: 3, m: 5 })).toContain("已驗證範圍");
+    const ext = condPreview(s, { radiusKm: 50, T: 2.5, m: 6.8 });
+    expect(ext).toContain("外推估計");
+    expect(ext).toContain("2.5 天內・M6.8 以上");
+  });
+
+  it("預覽：模型範圍外不給數字", () => {
+    const s = state(makeMockFeed(ISSUED));
+    s.place = { lat: 24.43, lon: 118.32, label: "金門縣", source: "county" };
+    const html = condPreview(s, { radiusKm: 50, T: 3, m: 5 });
+    expect(html).toContain("目前模型未涵蓋此區域");
+    expect(html).not.toContain("%");
+  });
+
+  it("專家版的地圖、規模、時間也有滑桿", () => {
+    const s = state(makeMockFeed(ISSUED));
+    expect(renderExpert(s, "map")).toMatch(/data-range="c-mag"[\s\S]*data-range="c-time"/);
+    expect(renderExpert(s, "mag")).toMatch(/data-range="c-radius"[\s\S]*data-range="c-time"/);
+    expect(renderExpert(s, "time")).toMatch(/data-range="c-radius"[\s\S]*data-range="c-mag"/);
   });
 });

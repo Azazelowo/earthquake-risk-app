@@ -7,9 +7,10 @@ import { makeMockFeed } from "./data/mock";
 import { cachedFeed, loadFeed, staleHours } from "./data/feed";
 import { fetchQuakes, type Quake } from "./data/exptech";
 import type { State, Cond, Place } from "./state";
-import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty } from "./state";
+import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty, sliderCond, type CondSlider } from "./state";
+import { sliderText } from "./ui/sliders";
 import { distText, esc, twTime } from "./format";
-import { renderPublic, renderPlaceSheet, renderCondSheet } from "./ui/public";
+import { renderPublic, renderPlaceSheet, renderCondSheet, condPreview } from "./ui/public";
 import { renderExpert, renderTabbar, renderLayersSheet, renderQuakeSheet, recentCard, pickNumbers, type ExpertTab } from "./ui/expert";
 import { renderInfo } from "./ui/info";
 import { mountMap, detachMap, setRadiusLive, focusCircle } from "./ui/map";
@@ -350,7 +351,31 @@ app.addEventListener("click", (ev) => {
   render();
 });
 
-// 半徑滑桿：拖的時候只更新圓與數字（input），放開才存檔並重畫（change）
+/** 條件滑桿（data-range="c-radius"／"c-time"／"c-mag"）對應的鍵；不是條件滑桿就是 null */
+function condSliderKey(t: HTMLInputElement): CondSlider | null {
+  const k = t.dataset?.range;
+  return k === "c-radius" ? "radius" : k === "c-time" ? "time" : k === "c-mag" ? "mag" : null;
+}
+
+// 條件滑桿：拖的時候只更新旁邊的數字與面板裡的預覽（input），放開才存檔並重畫（change）
+app.addEventListener("input", (ev) => {
+  const t = ev.target as HTMLInputElement, key = condSliderKey(t);
+  if (!key) return;
+  const c = sliderCond(s.cond, key, +t.value);
+  const out = document.getElementById(`c-${key}-out`);
+  if (out) out.textContent = sliderText(c, key);
+  const pv = document.getElementById("cond-preview");
+  if (pv) pv.innerHTML = String(safely(() => condPreview(s, c)));
+});
+app.addEventListener("change", (ev) => {
+  const t = ev.target as HTMLInputElement, key = condSliderKey(t);
+  if (!key) return;
+  s.cond = sliderCond(s.cond, key, +t.value);
+  save(s);
+  render();
+});
+
+// 地圖的半徑滑桿：拖的時候只更新圓與數字（input），放開才存檔並重畫（change）
 app.addEventListener("input", (ev) => {
   const t = ev.target as HTMLInputElement;
   if (t.dataset?.range !== "radius") return;
