@@ -11,6 +11,7 @@ import { pct, ratioText, twTime, ago, esc, levelOf } from "../format";
 import { LEVEL_EDGES } from "../format";
 import { EXPTECH_CREDIT, intText, quakeRow, type Quake } from "../data/exptech";
 import { outlookSection } from "./outlook";
+import { condSliders } from "./sliders";
 import { BASEMAPS, resolveBasemap, usable } from "./basemaps";
 
 export type ExpertTab = "map" | "mag" | "time" | "verify" | "more";
@@ -116,6 +117,7 @@ function viewMap(s: State) {
   <div class="ctls">
     <div class="ctl"><label>規模</label>${seg("m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m)}</div>
     <div class="ctl"><label>時間</label>${seg("T", TIMES, s.cond.T)}</div>
+    <div class="ctl-slides">${condSliders(s.cond, ["mag", "time"])}</div>
   </div>
   <div class="mapwrap ${s.mapFull ? "full" : ""}">
     <div class="mapbox">
@@ -174,7 +176,8 @@ function viewMag(s: State) {
     return `<tr><td>${pct(p)}</td><td>${isFinite(m) && m > 2 ? `M${m.toFixed(1)}` : "—"}</td></tr>`;
   });
   return `
-  <div class="ctls">${scopeCtl(s)}<div class="ctl"><label>時間</label>${seg("T", TIMES, s.cond.T)}</div></div>
+  <div class="ctls">${scopeCtl(s)}<div class="ctl"><label>時間</label>${seg("T", TIMES, s.cond.T)}</div>
+    <div class="ctl-slides">${condSliders(s.cond, s.scope === "point" ? ["radius", "time"] : ["time"])}</div></div>
   <h3 class="vh">固定地點＋時間，看規模</h3>
   ${chart}
   <div class="keys"><span class="k now">現在</span><span class="k bg">平常</span></div>
@@ -203,7 +206,8 @@ function viewTime(s: State) {
     { xLog: true, xTicks: [[1 / 24, "1時"], [6 / 24, "6時"], [1, "1天"], [3, "3天"], [7, "7天"], [30, "30天"]], xLabel: "時間長度", marker: s.cond.T },
   );
   return `
-  <div class="ctls">${scopeCtl(s)}<div class="ctl"><label>規模</label>${seg("m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m)}</div></div>
+  <div class="ctls">${scopeCtl(s)}<div class="ctl"><label>規模</label>${seg("m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m)}</div>
+    <div class="ctl-slides">${condSliders(s.cond, s.scope === "point" ? ["radius", "mag"] : ["mag"])}</div></div>
   <h3 class="vh">固定地點＋規模，看時間</h3>
   ${chart}
   <div class="keys"><span class="k now">現在</span><span class="k bg">平常</span></div>

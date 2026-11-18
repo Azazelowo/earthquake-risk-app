@@ -3,6 +3,10 @@
 import type { State, Cond } from "../state";
 import type { Feed } from "../data/schema";
 import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
+import type { CondSlider } from "../state";
+import { condSliders } from "./sliders";
+import { FAV_MAX, FAV_NAME_MAX, type Fav } from "../favs";
+import { buildShareUrl, shareLocationByDefault, shareLocationText } from "../share";
 import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
 import { pickMainshock, MAINSHOCK_RULES } from "../core/aftershock";
 import { outlookSection } from "./outlook";
@@ -162,7 +166,38 @@ function scanBlock(s: State): string {
     </details>`;
 }
 
-export function renderPublic(s: State, opt: { installHint: boolean }): string {
+/**
+ * 分享面板：條件＋「附上位置」（GPS 定位的位置預設不勾）＋連結本身。
+ * 勾選變動時 main.ts 只更新連結文字，不重畫。canShare＝這台裝置有系統分享（手機）。
+ */
+export function renderShareSheet(s: State, base: string, includeLocation: boolean, canShare: boolean): string {
+  const p = s.place, personal = !shareLocationByDefault(p);
+  const url = buildShareUrl(base, p, s.cond, includeLocation);
+  return `
+  <div class="sheet-head"><h2>分享</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
+  <p class="muted small">對方打開連結，會看到同一組條件${includeLocation ? "和位置" : "（位置用他自己的）"}，數字用他手機上最新的資料。</p>
+  <div class="share-what"><span>條件</span><b>${esc(condText(s.cond))}</b></div>
+  <label class="share-loc"><input type="checkbox" data-share-loc ${includeLocation ? "checked" : ""}><span>附上位置：${esc(shareLocationText(p))}</span></label>
+  ${personal ? `<p class="share-warn">這是用 GPS 定位的位置，所以預設不附。連結會留在聊天紀錄裡，附上的話對方會知道你大概在哪裡（約 1 公里）。</p>` : ""}
+  <input id="share-link" class="share-link" type="text" readonly value="${esc(url)}" aria-label="分享連結">
+  <div class="share-btns">
+    ${canShare ? `<button type="button" class="btn primary" data-act="share-go">分享…</button>` : ""}
+    <button type="button" class="btn ${canShare ? "" : "primary"}" data-act="share-copy">複製連結</button>
+  </div>
+  <p class="muted small" id="share-msg">統計機率，不是地震預報。APP 不會自己把連結傳出去，要傳給誰由你決定。</p>`;
+}
+
+/** 打開分享連結後首頁最上面的提醒：讓人知道畫面上的位置與條件是別人給的 */
+function sharedNote(kind: "" | "place" | "cond"): string {
+  if (!kind) return "";
+  const text = kind === "place"
+    ? "已套用分享連結的位置和條件。想看自己的位置，點下面的位置選「使用目前位置」。"
+    : "已套用分享連結的條件，位置還是你自己的。";
+  return `<div class="shared-note" role="status"><span>${text}</span>
+    <button type="button" class="x" data-act="dismiss-shared" aria-label="知道了">✕</button></div>`;
+}
+
+export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" | "place" | "cond" }): string {
   const f = s.feed, c = s.cond;
   const a = assessPoint(f, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
   const lv = levelOf(a.ratio);
@@ -197,6 +232,7 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   </section>`;
 
   return `
+  ${sharedNote(opt.shared ?? "")}
   <section class="loc-row">
     ${locButton(s)}${coarseHint(s)}
     <button class="cond" data-act="edit-cond">${condText(c)}<span class="chev">調整</span></button>
@@ -204,7 +240,7 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   ${status}
 
   <p class="fresh">
-    <span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>
+    <span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>・<button type="button" class="linkbtn" data-act="share">分享</button>
   </p>
   ${aftershockCard(f)}
   ${rankCard(f)}
@@ -251,9 +287,44 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   `;
 }
 
-export function renderPlaceSheet(s: State): string {
+// ---------- 我的情境（Phase 4） ----------
+
+/** 情境的一行說明：「高雄市燕巢區・周圍 50 km・3 天內・M5 以上」或「全台・3 天內・M6 以上（打開地圖）」 */
+export function favDesc(f: Fav): string {
+  return f.kind === "all" || !f.place ? allDesc(f.cond) : `${placeShort(f.place)}・${condText(f.cond)}`;
+}
+const allDesc = (c: Cond) => `全台・${timeLabel(c.T)}內・M${c.m} 以上（打開地圖）`;
+
+/**
+ * 選位置面板最上面的「我的情境」：已存的情境（點了套用、✕ 刪除），以及把目前的位置與條件存起來的表單。
+ * 選「全台」或「目前位置」用 radio，切換時不必重畫（重畫會把打到一半的名稱洗掉；main.ts 也會保留草稿）。
+ */
+function favSection(s: State, favs: Fav[]): string {
+  const list = favs.length
+    ? `<ul class="fav-list">${favs
+        .map((f) => `<li>
+          <button type="button" class="fav" data-fav="${esc(f.id)}"><b>${esc(f.name)}</b><small>${esc(favDesc(f))}</small></button>
+          <button type="button" class="x fav-del" data-fav-del="${esc(f.id)}" aria-label="刪除「${esc(f.name)}」">✕</button></li>`)
+        .join("")}</ul>`
+    : `<p class="muted small">還沒有存任何情境。把常看的地點和條件存起來，下次點一下就好。</p>`;
+  return `
+  <section class="favs">
+    <h3>我的情境</h3>
+    ${list}
+    <details class="fav-add" data-fold="fav-add"><summary>＋ 把目前的位置和條件存起來</summary>
+      <label class="fav-field">名稱<input id="fav-name" type="text" maxlength="${FAV_NAME_MAX}" placeholder="${esc(placeShort(s.place))}" autocomplete="off"></label>
+      <label class="fav-kind"><input type="radio" name="fav-kind" value="place" checked><span>${esc(`${placeShort(s.place)}・${condText(s.cond)}`)}</span></label>
+      <label class="fav-kind"><input type="radio" name="fav-kind" value="all"><span>${esc(allDesc(s.cond))}</span></label>
+      <button type="button" class="btn primary wide" data-act="fav-save">儲存</button>
+      <p class="muted small" id="fav-msg">只存在這支手機，不會上傳；位置會降低精度（約 1 公里）。名稱一樣的會直接換掉，最多 ${FAV_MAX} 個。</p>
+    </details>
+  </section>`;
+}
+
+export function renderPlaceSheet(s: State, favs: Fav[] = []): string {
   return `
   <div class="sheet-head"><h2>選擇位置</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
+  ${favSection(s, favs)}
   <button class="btn primary wide" data-act="locate">📍 使用目前位置</button>
   <a class="btn wide center" href="#/expert/map">🗺 在地圖上點選</a>
   <p class="muted small">位置只在你的手機上計算，不會傳出去。</p>
@@ -265,19 +336,29 @@ export function renderPlaceSheet(s: State): string {
   <p class="muted small">金門、連江在模型網格（北緯 21–26°、東經 119–123°）外，暫不提供。</p>`;
 }
 
+// ---------- 條件滑桿（Phase 4） ----------
+
+/** 調整條件面板下方的即時預覽：拖滑桿時就看得到結果（首頁本身被面板蓋住） */
+export function condPreview(s: State, c: Cond): string {
+  const a = assessPoint(s.feed, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
+  const head = `<span class="cp-q">${esc(placeShort(s.place))}${esc(condText(c))}</span>`;
+  if (!a.covered) return `${head}<span class="cp-a"><b>目前模型未涵蓋此區域</b></span>`;
+  const v = isVerified(s.feed, c.m, c.T);
+  return `${head}<span class="cp-a">現在 <b>${pct(a.p)}</b>・平常 ${pct(a.pBg)}・<b class="${levelOf(a.ratio).key}">${ratioText(a.ratio)}</b>
+    <i class="cp-tag ${v ? "ok" : "ext"}">${v ? "已驗證範圍" : "外推估計"}</i></span>`;
+}
+
 export function renderCondSheet(s: State): string {
-  const row = (title: string, key: string, opts: [number, string][], cur: number) => `
+  const row = (title: string, key: string, opts: [number, string][], cur: number, slider: CondSlider) => `
     <div class="field"><label>${title}</label><div class="seg">
       ${opts.map(([v, l]) => `<button class="${Math.abs(v - cur) < 1e-9 ? "on" : ""}" data-cond="${key}" data-v="${v}">${l}</button>`).join("")}
-    </div></div>`;
-  // 半徑可能是在地圖上用滑桿調出來的任意值：多列一顆代表「目前的值」
-  const radii: [number, string][] = RADII.map((r) => [r, `${r} km`]);
-  if (!RADII.includes(s.cond.radiusKm)) radii.push([s.cond.radiusKm, `${s.cond.radiusKm} km`]), radii.sort((a, b) => a[0] - b[0]);
+    </div>${condSliders(s.cond, [slider])}</div>`;
   return `
   <div class="sheet-head"><h2>調整條件</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
-  ${row("範圍（以你為中心）", "radiusKm", radii, s.cond.radiusKm)}
-  <p class="muted small">想要其他半徑，可以到專家版的地圖用滑桿調整。</p>
-  ${row("時間", "T", TIMES, s.cond.T)}
-  ${row("規模", "m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m)}
+  ${row("範圍（以你為中心）", "radiusKm", RADII.map((r) => [r, `${r} km`]), s.cond.radiusKm, "radius")}
+  ${row("時間", "T", TIMES, s.cond.T, "time")}
+  ${row("規模", "m", MAGS.map((m) => [m, `M${m}+`]), s.cond.m, "mag")}
+  <p class="cond-preview" id="cond-preview" aria-live="polite">${condPreview(s, s.cond)}</p>
+  <p class="muted small">按鈕是常用的值，滑桿可以細調。規模 6.5 以上回測樣本極少，標「外推估計」；範圍很大（例如 200 km）時有一部分在模型網格外，那部分不計入，ⓘ 頁會提醒。</p>
   <button class="btn wide" data-act="reset-cond">回到預設（50 km・3 天・M5）</button>`;
 }

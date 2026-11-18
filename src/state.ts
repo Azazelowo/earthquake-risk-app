@@ -12,6 +12,8 @@ export interface Place {
   source: "gps" | "county" | "default" | "map";
   /** 裝置回報的定位誤差半徑（公尺），只有 gps 才有 */
   accuracyM?: number;
+  /** true＝這個點原本是 GPS 定位（例如存成「我的情境」後變成固定點）：分享時和 GPS 一樣預設不附位置 */
+  personal?: boolean;
 }
 
 export interface Cond {
@@ -59,10 +61,22 @@ export const COUNTIES: { name: string; lat: number; lon: number; outside?: boole
 ];
 
 export const RADII = [10, 30, 50, 100];
-/** 地圖上的半徑滑桿範圍（km）。小於一格（約 20 km）時是把格內機率依面積比例分配，屬於外推。 */
+/**
+ * 半徑滑桿範圍（km）。小於一格（約 20 km）時是把格內機率依面積比例分配，屬於外推。
+ * 上限 200 km（2026-11-18 使用者確認）：300 km 時臺北有 46% 的範圍在模型網格外，數字會明顯偏低。
+ */
 export const RADIUS_MIN = 5, RADIUS_MAX = 200, RADIUS_STEP = 5;
 export const TIMES: [number, string][] = [[1 / 24, "1 小時"], [1, "1 天"], [3, "3 天"], [7, "7 天"], [30, "30 天"]];
+/**
+ * 時間滑桿範圍（天）。feed 只匯出到 30 天，超過就算不出來（interpHorizon 會丟例外），
+ * 所以上限 30 天（2026-11-18 使用者確認；365 天要破專題多匯出時間長度並重新校準，排在 12/9 之後）。
+ */
+export const T_MIN = TIMES[0][0], T_MAX = TIMES[TIMES.length - 1][0];
+/** 時間滑桿是對數刻度：0＝1 小時，TIME_STEPS＝30 天 */
+export const TIME_STEPS = 1000;
 export const MAGS = [4, 5, 6, 7];
+/** 規模滑桿範圍。M6.5 以上回測樣本極少，畫面只標「外推估計」，不跳窗（使用者定案 C） */
+export const M_MIN = 4, M_MAX = 8, M_STEP = 0.1;
 export const DEFAULT_COND: Cond = { radiusKm: 50, T: 3, m: 5 };
 export const SMOOTH_LABELS = ["格子", "輕", "中", "強"];
 
@@ -77,21 +91,64 @@ export interface Saved {
 }
 
 const num = (v: unknown): v is number => typeof v === "number" && isFinite(v);
+const within = (v: number, lo: number, hi: number) => v >= lo * (1 - 1e-9) && v <= hi * (1 + 1e-9);
+
+/** 條件是否在畫面與資料都能處理的範圍內（時間超過 30 天會算不出來，審查 Q6） */
+export function validCond(c: Cond): boolean {
+  return within(c.radiusKm, RADIUS_MIN, RADIUS_MAX) && within(c.T, T_MIN, T_MAX) && within(c.m, M_MIN, M_MAX);
+}
+
+/** 時間取到畫面上顯示的精度：1 天內到 0.1 小時、10 天內到 0.1 天、再長到整天 */
+export function niceTime(T: number): number {
+  const t = T < 1 ? Math.round(T * 240) / 240 : T < 10 ? Math.round(T * 10) / 10 : Math.round(T);
+  return Math.min(Math.max(t, T_MIN), T_MAX);
+}
+
+/** 時間滑桿位置（0–TIME_STEPS，對數刻度）→ 天數 */
+export function timeFromSlider(v: number): number {
+  const lo = Math.log10(T_MIN), hi = Math.log10(T_MAX), x = Math.min(Math.max(v / TIME_STEPS, 0), 1);
+  return niceTime(10 ** (lo + x * (hi - lo)));
+}
+
+/** 天數 → 時間滑桿位置 */
+export function sliderFromTime(T: number): number {
+  const lo = Math.log10(T_MIN), hi = Math.log10(T_MAX);
+  return Math.round(((Math.log10(Math.min(Math.max(T, T_MIN), T_MAX)) - lo) / (hi - lo)) * TIME_STEPS);
+}
+
+export type CondSlider = "radius" | "time" | "mag";
+
+/** 滑桿的原始值 → 新的條件（夾在範圍內、取到刻度） */
+export function sliderCond(c: Cond, key: CondSlider, raw: number): Cond {
+  if (!Number.isFinite(raw)) return c;
+  if (key === "radius")
+    return { ...c, radiusKm: Math.min(Math.max(Math.round(raw / RADIUS_STEP) * RADIUS_STEP, RADIUS_MIN), RADIUS_MAX) };
+  if (key === "time") return { ...c, T: timeFromSlider(raw) };
+  return { ...c, m: Math.min(Math.max(Math.round(raw * 10) / 10, M_MIN), M_MAX) };
+}
+
+/** 位置：只收看得懂的欄位；格式不對就整個不要 */
+export function sanitizePlace(raw: unknown): Place | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const p = raw as Record<string, any>;
+  if (!(num(p.lat) && num(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)) return undefined;
+  if (typeof p.label !== "string" || !["gps", "county", "default", "map"].includes(p.source)) return undefined;
+  const out: Place = { lat: p.lat, lon: p.lon, label: p.label.slice(0, 60), source: p.source };
+  if (typeof p.detail === "string") out.detail = p.detail.slice(0, 80);
+  if (num(p.accuracyM)) out.accuracyM = p.accuracyM;
+  if (p.personal === true) out.personal = true;
+  return out;
+}
 
 /** 本機存的資料可能是舊版格式或被改過：只收看得懂的欄位，其餘丟掉用預設值 */
 export function sanitize(raw: unknown): Saved {
   const out: Saved = {};
   if (!raw || typeof raw !== "object") return out;
   const r = raw as Record<string, any>;
-  const p = r.place;
-  if (p && num(p.lat) && num(p.lon) && typeof p.label === "string" && ["gps", "county", "default", "map"].includes(p.source)) {
-    out.place = { lat: p.lat, lon: p.lon, label: p.label, source: p.source };
-    if (typeof p.detail === "string") out.place.detail = p.detail;
-    if (num(p.accuracyM)) out.place.accuracyM = p.accuracyM;
-  }
+  const place = sanitizePlace(r.place);
+  if (place) out.place = place;
   const c = r.cond;
-  if (c && num(c.radiusKm) && num(c.T) && num(c.m) && c.radiusKm >= RADIUS_MIN && c.radiusKm <= RADIUS_MAX && c.T > 0)
-    out.cond = { radiusKm: c.radiusKm, T: c.T, m: c.m };
+  if (c && num(c.radiusKm) && num(c.T) && num(c.m) && validCond(c)) out.cond = { radiusKm: c.radiusKm, T: c.T, m: c.m };
   if (typeof r.basemap === "string") out.basemap = r.basemap;
   if (num(r.smooth) && r.smooth >= 0 && r.smooth < SMOOTH_LABELS.length) out.smooth = Math.round(r.smooth);
   if (r.mapLayer === "p" || r.mapLayer === "ratio") out.mapLayer = r.mapLayer;

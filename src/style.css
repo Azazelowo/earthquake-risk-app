@@ -415,3 +415,49 @@ html.modal-open, html.map-full { overflow: hidden; }
 .sheet p.qs-meta { font-size: 13px; color: var(--muted); margin: 0 0 2px; }
 .sheet p.qs-loc { margin: 0 0 8px; }
 .sheet p.as-cap, .sheet .as-more p, .sheet p.as-foot { color: var(--muted); }
+
+/* 條件滑桿（Phase 4）：預設按鈕下面細調；專家版放在條件列下方 */
+.slide, .field label.slide { display: flex; align-items: center; gap: 10px; margin: 6px 0 0; font-size: 13px; color: var(--text); }
+.field label.slide { margin-top: 8px; }
+.slide input { flex: 1; min-width: 0; height: 30px; accent-color: var(--accent); }
+.slide output { width: 6.2em; text-align: right; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ctl-slides { display: flex; flex-direction: column; gap: 2px; padding-left: 42px; }
+.cond-preview { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 14px 0 8px; font-size: 13px; }
+.cond-preview .cp-q { display: block; color: var(--muted); }
+.cond-preview .cp-a b.lv1 { color: var(--lv1); } .cond-preview .cp-a b.lv2 { color: var(--lv2); } .cond-preview .cp-a b.lv3 { color: var(--lv3); }
+.cp-tag { font-style: normal; font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 4px; color: var(--muted); white-space: nowrap; }
+.cp-tag.ext { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+
+/* 我的情境（選位置面板最上面） */
+.favs { margin: 2px 0 14px; }
+.favs h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+.fav-list { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fav-list li { display: flex; align-items: center; gap: 6px; }
+.fav { flex: 1; min-width: 0; text-align: left; border: 1px solid var(--line); background: var(--surface-2); border-radius: 12px; padding: 8px 12px; }
+.fav b, .fav small { display: block; }
+.fav small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-del { flex: none; }
+.fav-add summary { list-style: none; cursor: pointer; color: var(--accent); font-size: 14px; padding: 6px 0; }
+.fav-add summary::-webkit-details-marker { display: none; }
+.fav-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); margin: 6px 0; }
+.fav-field input {
+  font: inherit; font-size: 16px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
+}
+.fav-kind { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; margin: 8px 0; }
+.fav-kind input { margin-top: 3px; accent-color: var(--accent); flex: none; }
+
+/* 分享（首頁更新時間那一行的「分享」→ 底部面板） */
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+.share-what { display: flex; gap: 10px; align-items: baseline; margin: 10px 0; font-size: 14px; }
+.share-what span { color: var(--muted); font-size: 13px; flex: none; }
+.share-loc { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; margin: 10px 0; }
+.share-loc input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--accent); }
+.share-warn { font-size: 13px; color: var(--text); background: color-mix(in srgb, var(--warn) 10%, transparent); border-left: 3px solid var(--warn); border-radius: 8px; padding: 6px 10px; margin: 6px 0 10px; }
+.share-link { width: 100%; font: inherit; font-size: 13px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.share-btns { display: flex; gap: 8px; margin: 10px 0 4px; }
+.share-btns .btn { flex: 1; }
+.shared-note { display: flex; align-items: center; gap: 8px; margin: 10px 12px 0; padding: 8px 10px 8px 12px; font-size: 13px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 12px; }
+.shared-note span { flex: 1; }
+.shared-note .x { flex: none; width: 28px; height: 28px; }

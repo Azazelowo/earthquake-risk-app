@@ -7,9 +7,12 @@ import { makeMockFeed } from "./data/mock";
 import { cachedFeed, loadFeed, staleHours } from "./data/feed";
 import { fetchQuakes, type Quake } from "./data/exptech";
 import type { State, Cond, Place } from "./state";
-import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty } from "./state";
+import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty, placeShort, sliderCond, type CondSlider } from "./state";
+import { sliderText } from "./ui/sliders";
+import { loadFavs, makeFav, removeFav, storeFavs, upsertFav, FAV_MAX, type Fav } from "./favs";
 import { distText, esc, twTime } from "./format";
-import { renderPublic, renderPlaceSheet, renderCondSheet } from "./ui/public";
+import { renderPublic, renderPlaceSheet, renderCondSheet, renderShareSheet, condPreview, condText } from "./ui/public";
+import { buildShareUrl, parseShare, shareLocationByDefault, type SharedView } from "./share";
 import { renderExpert, renderTabbar, renderLayersSheet, renderQuakeSheet, recentCard, pickNumbers, type ExpertTab } from "./ui/expert";
 import { renderInfo } from "./ui/info";
 import { mountMap, detachMap, setRadiusLive, focusCircle } from "./ui/map";
@@ -36,9 +39,15 @@ const s: State = {
   mapFull: false,
   feedStatus: { origin: "loading", error: null },
 };
-let sheet: "" | "place" | "cond" | "layers" | "quake" = "";
+let sheet: "" | "place" | "cond" | "layers" | "quake" | "share" = "";
+/** 分享面板的「附上位置」（打開面板時依位置來源決定預設：GPS 不勾） */
+let shareLoc = false;
+/** 用分享連結打開後首頁的提醒：place＝位置和條件都是分享的；cond＝只有條件 */
+let sharedKind: "" | "place" | "cond" = "";
 /** 地震列表點開的那一筆（sheet＝quake 時用） */
 let sheetQuake: Quake | null = null;
+/** 我的情境（只存在這支手機） */
+let favs: Fav[] = loadFavs();
 /** ⓘ 頁按「返回」要回到的畫面 */
 let lastMain = "#/";
 /** 換頁後要捲到的區塊（例如從地圖設定跳到 ⓘ 頁的金鑰設定） */
@@ -86,11 +95,13 @@ function render() {
   const openFolds = new Set(samePage ? [...app.querySelectorAll("details")].filter((d) => d.open).map(foldKey) : []);
   const active = document.activeElement as HTMLElement | null;
   const focusSel = !active || !app.contains(active) ? "" : active.id ? `#${active.id}` : active.dataset.range ? `[data-range="${active.dataset.range}"]` : "";
-  const keyDraft = samePage ? (document.getElementById("carto-key") as HTMLInputElement | null)?.value ?? "" : "";
+  // 打到一半的文字（CARTO 金鑰、情境名稱）與情境的「目前位置／全台」選項
+  const drafts = samePage ? DRAFT_IDS.map((id) => (document.getElementById(id) as HTMLInputElement | null)?.value ?? "") : [];
+  const favKind = samePage ? (document.querySelector('input[name="fav-kind"]:checked') as HTMLInputElement | null)?.value : undefined;
 
   detachMap();
   document.documentElement.classList.toggle("map-full", s.mapFull);
-  const body = safely(() => (info ? renderInfo(s, lastMain) : expert ? renderExpert(s, r.tab) : renderPublic(s, { installHint })));
+  const body = safely(() => (info ? renderInfo(s, lastMain) : expert ? renderExpert(s, r.tab) : renderPublic(s, { installHint, shared: sharedKind })));
   app.innerHTML = `
   <header class="top">
     <a class="brand" href="#/"><img src="./icon.svg" alt=""><span>臺灣地震風險評估</span></a>
@@ -113,18 +124,50 @@ function render() {
   app.querySelectorAll("details").forEach((d) => {
     if (openFolds.has(foldKey(d))) d.open = true;
   });
-  const keyEl = document.getElementById("carto-key") as HTMLInputElement | null;
-  if (keyEl && keyDraft) keyEl.value = keyDraft;
+  DRAFT_IDS.forEach((id, i) => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (el && drafts[i]) el.value = drafts[i];
+  });
+  if (favKind === "all" || favKind === "place") {
+    const radio = document.querySelector<HTMLInputElement>(`input[name="fav-kind"][value="${favKind}"]`);
+    if (radio) radio.checked = true;
+  }
   if (focusSel) app.querySelector<HTMLElement>(focusSel)?.focus({ preventScroll: true });
+}
+
+/** 重畫時要保留內容的輸入框 */
+const DRAFT_IDS = ["carto-key", "fav-name"];
+
+/** 把目前的位置與條件存成情境（只存在這支手機） */
+function saveFav() {
+  const nameEl = document.getElementById("fav-name") as HTMLInputElement | null;
+  const kind = document.querySelector<HTMLInputElement>('input[name="fav-kind"]:checked')?.value === "all" ? "all" : "place";
+  const msg = document.getElementById("fav-msg");
+  const next = upsertFav(favs, makeFav(nameEl?.value ?? "", kind, s.place, s.cond));
+  if (!next) {
+    if (msg) msg.textContent = `已經存了 ${FAV_MAX} 個，先刪掉一個再存（名稱一樣的會直接換掉）。`;
+    return;
+  }
+  if (!storeFavs(next)) {
+    if (msg) msg.textContent = "這個瀏覽器沒辦法存資料（可能是無痕模式），情境沒有存起來。";
+    return;
+  }
+  favs = next;
+  if (nameEl) nameEl.value = "";
+  // 存好就把表單收起來，新的情境出現在上面的清單
+  const form = document.querySelector<HTMLDetailsElement>("details.fav-add");
+  if (form) form.open = false;
+  render();
 }
 
 /** 底部面板的內容；出錯時顯示錯誤卡片，不讓整頁壞掉 */
 function sheetHtml(): string {
   return safely(() =>
-    sheet === "place" ? renderPlaceSheet(s)
+    sheet === "place" ? renderPlaceSheet(s, favs)
     : sheet === "cond" ? renderCondSheet(s)
     : sheet === "layers" ? renderLayersSheet(s)
     : sheet === "quake" && sheetQuake ? renderQuakeSheet(s, sheetQuake)
+    : sheet === "share" ? renderShareSheet(s, shareBase(), shareLoc, canShare())
     : "",
   );
 }
@@ -214,7 +257,7 @@ function nameEpicenter() {
  * 把經緯度換成「XX市XX區」。界線檔在手機上判斷（geo/towns.ts），不會把位置送出去。
  * 界線檔要另外下載（約 300 KB），所以先顯示暫時的文字，判斷完再更新。
  */
-async function resolveLabel(p: Place) {
+async function resolveLabel(p: Place, note = "地圖選點") {
   const accText = p.accuracyM ? `定位誤差${distText(p.accuracyM)}` : "";
   let label: string, detail: string;
   try {
@@ -224,11 +267,11 @@ async function resolveLabel(p: Place) {
   } catch {
     // 界線檔載不到（例如第一次開啟就離線）：退回「最近的縣市」這種粗略說法
     const inTaiwanBox = p.lat > 21.5 && p.lat < 26.5 && p.lon > 118 && p.lon < 122.5;
-    label = inTaiwanBox ? `${nearestCounty(p.lat, p.lon)}附近` : p.source === "gps" ? "目前位置" : "地圖選點";
+    label = inTaiwanBox ? `${nearestCounty(p.lat, p.lon)}附近` : p.source === "gps" ? "目前位置" : note;
     detail = accText;
   }
   if (s.place !== p) return; // 等待期間使用者已經換了位置
-  if (p.source === "map") detail = detail ? `地圖選點・${detail}` : "地圖選點";
+  if (p.source === "map") detail = detail ? `${note}・${detail}` : note;
   s.place = { ...p, label, detail };
   save(s);
   render();
@@ -281,7 +324,7 @@ const clampRadius = (v: number) => Math.min(Math.max(Math.round(v), RADIUS_MIN),
 
 app.addEventListener("click", (ev) => {
   const t = (ev.target as HTMLElement).closest<HTMLElement>(
-    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-basemap],[data-smooth]",
+    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-fav],[data-fav-del],[data-basemap],[data-smooth]",
   );
   if (!t) return;
   const d = t.dataset;
@@ -294,6 +337,11 @@ app.addEventListener("click", (ev) => {
   else if (d.act === "map-full") s.mapFull = !s.mapFull;
   else if (d.act === "reset-cond") s.cond = { ...DEFAULT_COND };
   else if (d.act === "download") return download();
+  else if (d.act === "fav-save") return saveFav();
+  else if (d.act === "share") (shareLoc = shareLocationByDefault(s.place)), (sheet = "share");
+  else if (d.act === "share-go") return void shareNow();
+  else if (d.act === "share-copy") return void copyLink();
+  else if (d.act === "dismiss-shared") sharedKind = "";
   else if (d.act === "reload") return location.reload();
   else if (d.act === "show-disclaimer") return void showDisclaimer(s.feed.mock, true);
   else if (d.act === "install") return void promptInstall();
@@ -345,12 +393,62 @@ app.addEventListener("click", (ev) => {
     if (!q) return;
     sheetQuake = q;
     sheet = "quake";
+  } else if (d.favDel) {
+    const f = favs.find((x) => x.id === d.favDel);
+    if (!f || !confirm(`刪除情境「${f.name}」？`)) return;
+    favs = removeFav(favs, f.id);
+    storeFavs(favs);
+  } else if (d.fav) {
+    // 套用情境：地點＋條件；「全台」情境打開專家版的全台地圖
+    const f = favs.find((x) => x.id === d.fav);
+    if (!f) return;
+    sheet = "";
+    if (f.kind === "all" || !f.place) {
+      s.cond = { ...s.cond, m: f.cond.m, T: f.cond.T };
+      save(s);
+      location.hash = "#/expert/map";
+      return;
+    }
+    s.place = { ...f.place, detail: `我的情境：${f.name}` };
+    s.locate = "idle";
+    s.cond = { ...f.cond };
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
   save(s);
   render();
 });
 
-// 半徑滑桿：拖的時候只更新圓與數字（input），放開才存檔並重畫（change）
+/** 條件滑桿（data-range="c-radius"／"c-time"／"c-mag"）對應的鍵；不是條件滑桿就是 null */
+function condSliderKey(t: HTMLInputElement): CondSlider | null {
+  const k = t.dataset?.range;
+  return k === "c-radius" ? "radius" : k === "c-time" ? "time" : k === "c-mag" ? "mag" : null;
+}
+
+// 條件滑桿：拖的時候只更新旁邊的數字與面板裡的預覽（input），放開才存檔並重畫（change）
+app.addEventListener("input", (ev) => {
+  const t = ev.target as HTMLInputElement, key = condSliderKey(t);
+  if (!key) return;
+  const c = sliderCond(s.cond, key, +t.value);
+  const out = document.getElementById(`c-${key}-out`);
+  if (out) out.textContent = sliderText(c, key);
+  const pv = document.getElementById("cond-preview");
+  if (pv) pv.innerHTML = String(safely(() => condPreview(s, c)));
+});
+app.addEventListener("change", (ev) => {
+  const t = ev.target as HTMLInputElement;
+  // 分享面板的「附上位置」：重畫面板，連結與說明跟著變
+  if (t.dataset && "shareLoc" in t.dataset) {
+    shareLoc = t.checked;
+    return render();
+  }
+  const key = condSliderKey(t);
+  if (!key) return;
+  s.cond = sliderCond(s.cond, key, +t.value);
+  save(s);
+  render();
+});
+
+// 地圖的半徑滑桿：拖的時候只更新圓與數字（input），放開才存檔並重畫（change）
 app.addEventListener("input", (ev) => {
   const t = ev.target as HTMLInputElement;
   if (t.dataset?.range !== "radius") return;
@@ -394,6 +492,9 @@ function download() {
 }
 
 window.addEventListener("hashchange", () => {
+  // APP 開著時又打開一個分享連結（例如從聊天軟體點進來）
+  const shared = parseShare(location.hash);
+  if (shared) applyShared(shared);
   sheet = "";
   if (route().mode !== "info") lastMain = location.hash || "#/";
   render();
@@ -416,8 +517,60 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && Date.now() - (s.quakes?.at ?? 0) > 60e3) void refreshQuakes();
 });
 
+// ---------- 分享網址 ----------
+
+/** 網站網址（# 前面那段），分享連結用 */
+const shareBase = () => location.href.split("#")[0];
+const canShare = () => typeof navigator.share === "function";
+
+/**
+ * 套用分享連結：條件夾在範圍內、縣市要在內建清單裡、地點名稱在這支手機上自己判斷（share.ts 已檢查）。
+ * 套用後把網址換回 #/，重新整理不會再套一次，網址列也不會一直留著別人的位置。
+ */
+function applyShared(v: SharedView) {
+  s.cond = { ...s.cond, ...v.cond };
+  if (v.place?.kind === "county") s.place = { lat: v.place.lat, lon: v.place.lon, label: v.place.name, source: "county" };
+  else if (v.place) {
+    const p: Place = { lat: v.place.lat, lon: v.place.lon, label: "分享的位置", detail: "正在判斷鄉鎮區…", source: "map" };
+    s.place = p;
+    void resolveLabel(p, "分享的位置");
+  }
+  if (v.place) s.locate = "idle";
+  sharedKind = v.place ? "place" : "cond";
+  save(s);
+  history.replaceState(null, "", `${shareBase()}#/`);
+}
+
+async function shareNow() {
+  const url = buildShareUrl(shareBase(), s.place, s.cond, shareLoc);
+  const text = `${shareLoc ? `${placeShort(s.place)}` : ""}${condText(s.cond)}的地震機率（統計機率，不是地震預報）`;
+  try {
+    await navigator.share({ title: "臺灣地震風險評估", text, url });
+  } catch (e) {
+    // 使用者自己取消（AbortError）就什麼都不做；其他錯誤改成複製
+    if (!(e instanceof Error && e.name === "AbortError")) void copyLink();
+  }
+}
+
+async function copyLink() {
+  const input = document.getElementById("share-link") as HTMLInputElement | null;
+  const msg = document.getElementById("share-msg");
+  const url = buildShareUrl(shareBase(), s.place, s.cond, shareLoc);
+  try {
+    await navigator.clipboard.writeText(url);
+    if (msg) msg.textContent = "已複製連結。統計機率，不是地震預報。";
+  } catch {
+    // 沒有剪貼簿權限：選取連結文字，讓使用者自己長按複製
+    input?.select();
+    if (msg) msg.textContent = "沒辦法自動複製，連結已經選取，請長按複製。";
+  }
+}
+
 // ---------- 啟動 ----------
 
+// 用分享連結打開：先套用（在第一次畫面之前），而且這次不自動定位，免得 GPS 蓋掉分享的位置
+const sharedAtStart = parseShare(location.hash);
+if (sharedAtStart) applyShared(sharedAtStart);
 if (route().mode !== "info") lastMain = location.hash || "#/";
 render();
 nameEpicenter();
@@ -432,5 +585,6 @@ void refreshQuakes();
 void refreshFeed()
   .then(() => showDisclaimer(s.feed.mock))
   .then(() => {
+    if (sharedAtStart?.place) return;
     if (!saved.place || saved.place.source === "gps") locate();
   });
