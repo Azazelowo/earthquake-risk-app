@@ -10,7 +10,7 @@ const COUNTY: Place = { lat: 22.63, lon: 120.3, label: "高雄市", source: "cou
 describe("存成情境", () => {
   it("GPS 位置降到 0.01°、變成固定的點，定位誤差與補充文字都不存", () => {
     const f = makeFav("高雄住家", "place", GPS, COND, "a");
-    expect(f.place).toEqual({ lat: 22.63, lon: 120.31, label: "高雄市三民區", source: "map" });
+    expect(f.place).toEqual({ lat: 22.63, lon: 120.31, label: "高雄市三民區", source: "map", personal: true });
     expect(f.cond).toEqual(COND);
   });
 

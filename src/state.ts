@@ -12,6 +12,8 @@ export interface Place {
   source: "gps" | "county" | "default" | "map";
   /** 裝置回報的定位誤差半徑（公尺），只有 gps 才有 */
   accuracyM?: number;
+  /** true＝這個點原本是 GPS 定位（例如存成「我的情境」後變成固定點）：分享時和 GPS 一樣預設不附位置 */
+  personal?: boolean;
 }
 
 export interface Cond {
@@ -134,6 +136,7 @@ export function sanitizePlace(raw: unknown): Place | undefined {
   const out: Place = { lat: p.lat, lon: p.lon, label: p.label.slice(0, 60), source: p.source };
   if (typeof p.detail === "string") out.detail = p.detail.slice(0, 80);
   if (num(p.accuracyM)) out.accuracyM = p.accuracyM;
+  if (p.personal === true) out.personal = true;
   return out;
 }
 

@@ -4,7 +4,7 @@ import { makeMockFeed } from "../data/mock";
 import type { Feed } from "../data/schema";
 import type { State } from "../state";
 import { DEFAULT_COND } from "../state";
-import { aftershockCard, condPreview, rankCard, renderCondSheet, renderPlaceSheet, renderPublic } from "./public";
+import { aftershockCard, condPreview, rankCard, renderCondSheet, renderPlaceSheet, renderPublic, renderShareSheet } from "./public";
 import { makeFav } from "../favs";
 import { renderExpert } from "./expert";
 
@@ -146,5 +146,38 @@ describe("選位置面板的「我的情境」", () => {
     expect(html).toContain('data-fav-del="id2"');
     expect(html).toContain("高雄市・周圍 30 km・1 天內・M4 以上");
     expect(html).toContain("全台・7 天內・M6 以上（打開地圖）");
+  });
+});
+
+describe("分享面板", () => {
+  const BASE = "https://azazelowo.github.io/earthquake-risk-app/";
+  it("縣市位置預設附上；有系統分享時多一顆「分享…」；寫明不是預報、APP 不會自己傳出去", () => {
+    const s = state(makeMockFeed(ISSUED));
+    s.place = { lat: 23.99, lon: 121.6, label: "花蓮縣", source: "county" };
+    const html = renderShareSheet(s, BASE, true, true);
+    expect(html).toMatch(/data-share-loc checked/);
+    expect(html).toContain("附上位置：花蓮縣");
+    expect(html).toContain('data-act="share-go"');
+    expect(html).toContain("c=%E8%8A%B1%E8%93%AE%E7%B8%A3");
+    expect(html).toContain("不是地震預報");
+    expect(html).toContain("APP 不會自己把連結傳出去");
+  });
+
+  it("GPS 位置：沒勾就不放位置，並說明為什麼預設不附；電腦上只有「複製連結」", () => {
+    const s = state(makeMockFeed(ISSUED));
+    s.place = { lat: 22.6275, lon: 120.3051, label: "高雄市三民區", source: "gps", accuracyM: 20 };
+    const html = renderShareSheet(s, BASE, false, false);
+    expect(html).not.toMatch(/data-share-loc checked/);
+    expect(html).toContain("預設不附");
+    expect(html).not.toMatch(/lat=|lon=/);
+    expect(html).not.toContain('data-act="share-go"');
+  });
+
+  it("首頁更新時間那一行有「分享」；用分享連結打開時最上面有提醒", () => {
+    const s = state(makeMockFeed(ISSUED));
+    expect(renderPublic(s, { installHint: false })).toContain('data-act="share"');
+    expect(renderPublic(s, { installHint: false, shared: "place" })).toContain("已套用分享連結的位置和條件");
+    expect(renderPublic(s, { installHint: false, shared: "cond" })).toContain("位置還是你自己的");
+    expect(renderPublic(s, { installHint: false })).not.toContain("已套用分享連結");
   });
 });

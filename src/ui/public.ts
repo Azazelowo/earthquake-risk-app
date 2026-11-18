@@ -6,6 +6,7 @@ import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
 import type { CondSlider } from "../state";
 import { condSliders } from "./sliders";
 import { FAV_MAX, FAV_NAME_MAX, type Fav } from "../favs";
+import { buildShareUrl, shareLocationByDefault, shareLocationText } from "../share";
 import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
 import { pickMainshock, MAINSHOCK_RULES } from "../core/aftershock";
 import { outlookSection } from "./outlook";
@@ -165,7 +166,38 @@ function scanBlock(s: State): string {
     </details>`;
 }
 
-export function renderPublic(s: State, opt: { installHint: boolean }): string {
+/**
+ * 分享面板：條件＋「附上位置」（GPS 定位的位置預設不勾）＋連結本身。
+ * 勾選變動時 main.ts 只更新連結文字，不重畫。canShare＝這台裝置有系統分享（手機）。
+ */
+export function renderShareSheet(s: State, base: string, includeLocation: boolean, canShare: boolean): string {
+  const p = s.place, personal = !shareLocationByDefault(p);
+  const url = buildShareUrl(base, p, s.cond, includeLocation);
+  return `
+  <div class="sheet-head"><h2>分享</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
+  <p class="muted small">對方打開連結，會看到同一組條件${includeLocation ? "和位置" : "（位置用他自己的）"}，數字用他手機上最新的資料。</p>
+  <div class="share-what"><span>條件</span><b>${esc(condText(s.cond))}</b></div>
+  <label class="share-loc"><input type="checkbox" data-share-loc ${includeLocation ? "checked" : ""}><span>附上位置：${esc(shareLocationText(p))}</span></label>
+  ${personal ? `<p class="share-warn">這是用 GPS 定位的位置，所以預設不附。連結會留在聊天紀錄裡，附上的話對方會知道你大概在哪裡（約 1 公里）。</p>` : ""}
+  <input id="share-link" class="share-link" type="text" readonly value="${esc(url)}" aria-label="分享連結">
+  <div class="share-btns">
+    ${canShare ? `<button type="button" class="btn primary" data-act="share-go">分享…</button>` : ""}
+    <button type="button" class="btn ${canShare ? "" : "primary"}" data-act="share-copy">複製連結</button>
+  </div>
+  <p class="muted small" id="share-msg">統計機率，不是地震預報。APP 不會自己把連結傳出去，要傳給誰由你決定。</p>`;
+}
+
+/** 打開分享連結後首頁最上面的提醒：讓人知道畫面上的位置與條件是別人給的 */
+function sharedNote(kind: "" | "place" | "cond"): string {
+  if (!kind) return "";
+  const text = kind === "place"
+    ? "已套用分享連結的位置和條件。想看自己的位置，點下面的位置選「使用目前位置」。"
+    : "已套用分享連結的條件，位置還是你自己的。";
+  return `<div class="shared-note" role="status"><span>${text}</span>
+    <button type="button" class="x" data-act="dismiss-shared" aria-label="知道了">✕</button></div>`;
+}
+
+export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" | "place" | "cond" }): string {
   const f = s.feed, c = s.cond;
   const a = assessPoint(f, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
   const lv = levelOf(a.ratio);
@@ -200,6 +232,7 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   </section>`;
 
   return `
+  ${sharedNote(opt.shared ?? "")}
   <section class="loc-row">
     ${locButton(s)}${coarseHint(s)}
     <button class="cond" data-act="edit-cond">${condText(c)}<span class="chev">調整</span></button>
@@ -207,7 +240,7 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   ${status}
 
   <p class="fresh">
-    <span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>
+    <span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>・<button type="button" class="linkbtn" data-act="share">分享</button>
   </p>
   ${aftershockCard(f)}
   ${rankCard(f)}

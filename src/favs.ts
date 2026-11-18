@@ -77,6 +77,8 @@ export function makeFav(name: string, kind: Fav["kind"], place: Place, cond: Con
   if (kind === "all") return { id, name: cleanName(n), kind, cond: { ...cond } };
   const p = coarsen(place); // GPS 0.01°、地圖 0.001°；縣市是固定的代表點
   const fixed: Place = { lat: p.lat, lon: p.lon, label: p.label, source: p.source === "gps" ? "map" : p.source };
+  // 原本是 GPS 定位（或本來就是那樣來的固定點）：分享時和 GPS 一樣預設不附位置
+  if (p.source === "gps" || p.personal) fixed.personal = true;
   return { id, name: cleanName(n), kind, place: fixed, cond: { ...cond } };
 }
 
