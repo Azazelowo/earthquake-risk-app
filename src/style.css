@@ -351,3 +351,24 @@ html.modal-open, html.map-full { overflow: hidden; }
 .tbl.quakes .q-loc small { display: block; color: var(--muted); }
 .card .credit { font-size: 11px; color: var(--muted); margin: 4px 0 0; }
 .card.errcard { border-color: var(--warn); }
+
+/* 餘震卡（首頁）：最近的較大地震，震央周圍再發生地震的機率 */
+.card.aftershock { margin: 10px 0; }
+.as-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.as-head span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.card p.as-quake { color: var(--text); margin: 2px 0 6px; }
+.card p.as-cap { font-size: 13px; margin: 8px 0 0; }
+.as-tbl th, .as-tbl td { text-align: center; }
+.as-tbl tbody th { text-align: left; white-space: nowrap; color: var(--text); font-weight: 600; }
+.as-tbl td b { display: block; font-size: 16px; }
+.as-tbl td small { display: block; font-size: 11px; color: var(--muted); }
+.as-tbl b.lv1 { color: var(--lv1); } .as-tbl b.lv2 { color: var(--lv2); } .as-tbl b.lv3 { color: var(--lv3); }
+.card p.as-warn, .card p.as-note {
+  background: color-mix(in srgb, var(--warn) 10%, transparent); border-left: 3px solid var(--warn);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--text);
+}
+.card p.as-none { color: var(--text); }
+.as-more summary { cursor: pointer; color: var(--accent); font-size: 13px; padding: 2px 0; }
+.card .as-more p { font-size: 13px; }
+.card p.as-foot { font-size: 12px; margin: 8px 0 0; }
+.card p.as-foot a { margin-left: 4px; white-space: nowrap; }

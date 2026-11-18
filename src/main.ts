@@ -15,7 +15,8 @@ import { renderInfo } from "./ui/info";
 import { mountMap, detachMap, setRadiusLive, focusCircle } from "./ui/map";
 import { showDisclaimer } from "./ui/disclaimer";
 import { DEFAULT_BASEMAP, setCartoKey } from "./ui/basemaps";
-import { loadTowns, describePlace } from "./geo/towns";
+import { loadTowns, loadedTowns, describePlace } from "./geo/towns";
+import { pickMainshock } from "./core/aftershock";
 import { initPwa, promptInstall, checkUpdate, applyUpdate } from "./pwa";
 
 const saved = loadSaved();
@@ -79,7 +80,7 @@ function render() {
 
   // 重畫前先記下「使用者正在用的東西」，重畫後還原
   const samePage = renderedHash === location.hash;
-  const folds = samePage ? [...app.querySelectorAll("details")].map((d) => d.open) : [];
+  const openFolds = new Set(samePage ? [...app.querySelectorAll("details")].filter((d) => d.open).map(foldKey) : []);
   const active = document.activeElement as HTMLElement | null;
   const focusSel = !active || !app.contains(active) ? "" : active.id ? `#${active.id}` : active.dataset.range ? `[data-range="${active.dataset.range}"]` : "";
   const keyDraft = samePage ? (document.getElementById("carto-key") as HTMLInputElement | null)?.value ?? "" : "";
@@ -106,12 +107,20 @@ function render() {
   renderedHash = location.hash;
 
   if (onMap) safely(() => mountMap(s, { onPick: pickOnMap }));
-  app.querySelectorAll("details").forEach((d, i) => {
-    if (folds[i]) d.open = true;
+  app.querySelectorAll("details").forEach((d) => {
+    if (openFolds.has(foldKey(d))) d.open = true;
   });
   const keyEl = document.getElementById("carto-key") as HTMLInputElement | null;
   if (keyEl && keyDraft) keyEl.value = keyDraft;
   if (focusSel) app.querySelector<HTMLElement>(focusSel)?.focus({ preventScroll: true });
+}
+
+/**
+ * 摺疊區的識別：data-fold，沒有就用標題文字。不能用順序對應——餘震卡這類區塊會依資料出現或消失，
+ * 順序一變，展開的就會變成別的區塊。
+ */
+function foldKey(d: HTMLDetailsElement): string {
+  return d.dataset.fold ?? d.querySelector("summary")?.textContent ?? "";
 }
 
 /**
@@ -165,6 +174,21 @@ async function refreshFeed() {
   s.feed = r.feed;
   s.feedStatus = { origin: r.origin, error: r.error };
   render();
+  nameEpicenter();
+}
+
+/**
+ * 首頁的餘震卡要講震央在哪個鄉鎮區：界線檔還沒載入就先載，載好再重畫首頁。
+ * 判斷在手機上做（geo/towns.ts），不會把任何位置送出去。
+ */
+function nameEpicenter() {
+  if (loadedTowns() || !pickMainshock(s.feed)) return;
+  loadTowns().then(
+    () => route().mode === "public" && render(),
+    () => {
+      /* 載不到就繼續顯示座標 */
+    },
+  );
 }
 
 // ---------- 位置 ----------
@@ -358,6 +382,7 @@ document.addEventListener("visibilitychange", () => {
 
 if (route().mode !== "info") lastMain = location.hash || "#/";
 render();
+nameEpicenter();
 // PWA 狀態（可安裝、離線就緒、有新版）只影響首頁的安裝提示與 ⓘ 頁；專家頁不必為此重畫
 initPwa(() => {
   if (route().mode !== "expert") render();

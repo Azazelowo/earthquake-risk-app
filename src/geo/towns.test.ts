@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import topo from "../data/towns.topo.json";
 import fixture from "./towns.fixture.json";
-import { buildIndex, describePlace, townsNear, TOWN_TOLERANCE_M, type TownTopology } from "./towns";
+import { buildIndex, describePlace, epicenterText, townsNear, TOWN_TOLERANCE_M, type TownTopology } from "./towns";
 
 const idx = buildIndex(topo as unknown as TownTopology);
 const byCode = new Map(idx.towns.map((t) => [t.code, t.county + t.name]));
@@ -148,5 +148,19 @@ describe("定位誤差很大時（電腦用 Wi-Fi／網路定位）", () => {
     const r = describePlace(idx, 23.0, 120.25, 30_000); // 臺南、高雄交界一帶，誤差 30 公里
     expect(r.label).toMatch(/^.+[市縣]附近$/);
     expect(r.confident).toBe(false);
+  });
+});
+
+describe("震央的位置文字（餘震卡）", () => {
+  it("在鄉鎮區內直接講名字", () => {
+    expect(epicenterText(idx, 23.99, 121.6)).toBe("花蓮縣花蓮市");
+  });
+  it("在外面就講離最近的鄉鎮區多遠（不說「海上」）", () => {
+    const t = epicenterText(idx, 24.89, 122.11);
+    expect(t).toMatch(/^離宜蘭縣\S+約 \d+ 公里$/);
+    expect(t).not.toContain("海上");
+  });
+  it("離所有鄉鎮區都超過 80 公里就只給座標", () => {
+    expect(epicenterText(idx, 21.3, 122.9)).toBe("21.30°N, 122.90°E");
   });
 });

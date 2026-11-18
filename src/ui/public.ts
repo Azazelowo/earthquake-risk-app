@@ -1,10 +1,12 @@
 // 大眾版首頁：一個狀態（和平常比的倍數決定顏色）＋絕對機率＋可展開的說明。
 // 提醒與資料限制集中在 ⓘ 頁（info.ts）；這裡只留「已驗證／外推估計」的小標籤。
 import type { State, Cond } from "../state";
+import type { Feed } from "../data/schema";
 import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
-import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
+import { assess, assessPoint, allWeights, isVerified, FULL_COVERAGE } from "../core/hazard";
+import { aftershockOutlook, pickMainshock, AFTERSHOCK_TIMES, MAINSHOCK_RULES } from "../core/aftershock";
 import { levelOf, pct, odds, ratioText, twTime, ago, esc, distText } from "../format";
-import { COARSE_M } from "../geo/towns";
+import { COARSE_M, coordText, epicenterText, loadedTowns } from "../geo/towns";
 import { pwa } from "../pwa";
 import { conditionNotes } from "./info";
 
@@ -62,6 +64,50 @@ function installCard(showHint: boolean): string {
   </div>`;
 }
 
+/**
+ * 餘震卡：最近 7 天內 M5 以上（或 30 天內 M6 以上）的最大地震，震央周圍 50 km 之後再發生地震的機率。
+ * 沒有這種地震就不出現。「大地震後偏低」這個限制直接寫在卡片上，不藏到 ⓘ 頁。
+ */
+export function aftershockCard(f: Feed): string {
+  const q = pickMainshock(f);
+  if (!q) return "";
+  const o = aftershockOutlook(f, q);
+  // 震央在哪個鄉鎮區：界線檔在手機上判斷（main.ts 會在需要時載入）；還沒載入就先給座標
+  const idx = loadedTowns();
+  const where = idx ? epicenterText(idx, q.lat, q.lon) : coordText(q.lat, q.lon);
+  const head = `
+    <div class="as-head"><b>最近的較大地震</b><span>${esc(twTime(q.time))}・${esc(ago(q.time))}</span></div>
+    <p class="as-quake">規模 ${q.ml.toFixed(1)}・深度 ${Math.round(q.depth_km)} 公里・震央${where.startsWith("離") ? "" : "在"}${esc(where)}</p>`;
+  const foot = `<p class="as-foot">統計機率，不是地震預報；最新消息以中央氣象署為準。<a href="#/expert/more">最近的地震 →</a></p>`;
+  if (!o.covered)
+    return `<section class="card aftershock">${head}
+      <p class="as-none">震央附近大部分不在模型範圍內（北緯 ${f.grid.lat_min}–${f.grid.lat_max}°、東經 ${f.grid.lon_min}–${f.grid.lon_max}°），這裡不提供數字。這不代表那裡不會有餘震。</p>${foot}</section>`;
+
+  const rows = o.rows
+    .map((r) => `<tr><th>M${r.m} 以上</th>${r.cells
+      .map((c) => `<td><b class="${levelOf(c.ratio).key}">${pct(c.p)}</b><small>平常 ${pct(c.pBg)}</small></td>`)
+      .join("")}</tr>`)
+    .join("");
+  const part = o.coverage < FULL_COVERAGE ? `<p class="as-note">範圍約 ${Math.round((1 - o.coverage) * 100)}% 在模型網格外，那部分沒有計入，數字會偏低。</p>` : "";
+  const rule = MAINSHOCK_RULES.map((r) => `${r.days} 天內規模 ${r.minMl} 以上`).join("、或 ");
+  return `
+  <section class="card aftershock">${head}
+    <p class="as-cap">震央周圍 ${o.radiusKm} 公里內，之後再發生地震的機率</p>
+    <table class="tbl as-tbl"><thead><tr><th></th>${AFTERSHOCK_TIMES.map((T) => `<th>${timeLabel(T)}內</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody></table>
+    ${part}
+    <p class="as-warn">大地震剛發生時，這些數字可能<b>偏低</b>：目前的模型把大地震和小地震帶來的餘震當成一樣多，要等餘震陸續進到資料裡才會追上。</p>
+    <details class="as-more" data-fold="aftershock"><summary>怎麼算的、還有什麼限制</summary>
+      <p>用的是和上面同一個模型：以震央為中心、半徑 ${o.radiusKm} 公里，算規模門檻以上的地震「至少發生一次」的機率。「平常」是只用長期紀錄算的機率。</p>
+      <p>模型不分主震、餘震，這是震央附近「再發生地震」的機率，包含平常就會有的地震。</p>
+      <p>偏低的原因：模型裡「規模對餘震數量的影響」擬合出來是 0，等於假設規模 6 和規模 4 的地震之後會有一樣多的餘震。實際上大地震的餘震多很多，所以剛發生時偏低；之後的餘震陸續發生、算進資料，數字才會跟著上來。這是目前版本的已知限制。</p>
+      <p>外海定位不準的地震不在模型裡，外海的數字也會偏低；新的地震要等下一次資料更新（每 15 分鐘）才會算進去。</p>
+      <p>挑哪一個地震：資料發布前 ${esc(rule)}的地震中，規模最大的那一個。</p>
+    </details>
+    ${foot}
+  </section>`;
+}
+
 export function renderPublic(s: State, opt: { installHint: boolean }): string {
   const f = s.feed, c = s.cond;
   const a = assessPoint(f, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
@@ -106,6 +152,7 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   <p class="fresh">
     <span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>
   </p>
+  ${aftershockCard(f)}
 
   <details class="fold">
     <summary>這個數字是什麼意思？</summary>
