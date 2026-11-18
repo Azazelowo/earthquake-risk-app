@@ -461,3 +461,24 @@ html.modal-open, html.map-full { overflow: hidden; }
   background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 12px; }
 .shared-note span { flex: 1; }
 .shared-note .x { flex: none; width: 28px; height: 28px; }
+
+/* 歷史回放（Phase 5）：上方提示列、回放頁 */
+.histbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 14px; font-size: 13px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.histbar > span:first-child { flex: 1 1 220px; }
+.histbar-btns { display: flex; align-items: center; gap: 10px; }
+.btn.sm { padding: 5px 10px; font-size: 13px; border-radius: 10px; }
+.fresh .dot.hist { background: var(--accent); }
+.history { padding: 0 12px 24px; }
+.history .card { margin: 10px 0; }
+.history .card > p { color: var(--text); }
+.hq-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 10px; }
+.hq-head span { font-size: 12px; color: var(--muted); }
+.hq-snaps { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+.hq-snap { font-size: 13px; padding: 8px 6px; }
+.hq-snap.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.hq-snap.busy { opacity: .6; }
+a.card.cardlink { display: block; color: var(--text); }
+a.card.cardlink .link { font-size: 13px; color: var(--accent); }

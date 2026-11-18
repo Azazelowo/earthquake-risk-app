@@ -73,8 +73,20 @@ if (!problems.length) {
       check(assets.some((a) => /^assets\/.+\.css$/.test(a)), "預存清單沒有 CSS");
       check(assets.some((a) => /towns\.topo.*\.json$/.test(a)), "預存清單沒有鄉鎮區界線檔（離線時無法判斷鄉鎮區）");
       check(!assets.includes("sw.js"), "預存清單不該包含 sw.js 自己");
+      check(!assets.some((a) => a.startsWith("history/")), "預存清單不該包含歷史回放的資料（約 2 MB，點開才下載）");
       console.log(`service worker：預存 ${assets.length} 個檔案`);
     }
+  }
+
+  // ---------- 歷史回放 ----------
+  // 清單裡的每個時間點都要有檔案，不然歷史頁點下去才發現 404
+  const histIndex = join(DIST, "history", "index.json");
+  check(existsSync(histIndex), "缺少 dist/history/index.json（歷史回放的清單）");
+  if (existsSync(histIndex)) {
+    const idx = JSON.parse(read("history/index.json"));
+    const ids = (idx.quakes ?? []).flatMap((q) => (q.snapshots ?? []).map((x) => x.id));
+    check(ids.length > 0, "歷史回放的清單是空的");
+    for (const id of ids) check(existsSync(join(DIST, "history", `${id}.json`)), `歷史回放缺少檔案：history/${id}.json`);
   }
 
   // ---------- 提醒（不算錯誤） ----------

@@ -25,6 +25,7 @@ export interface Cond {
 export type Locate = "idle" | "pending" | "denied" | "ok";
 
 import type { Quake } from "./data/exptech";
+import type { HistoryQuake, HistorySnapshot } from "./data/history";
 
 export interface State {
   feed: Feed;
@@ -43,6 +44,11 @@ export interface State {
   feedStatus?: { origin: "loading" | "network" | "cache" | "mock"; error: string | null };
   /** 即時地震列表（ExpTech 地震報告，只顯示、不進入風險計算）；不儲存 */
   quakes?: { status: "loading" | "ok" | "error"; list: Quake[]; error: string | null; at: number | null };
+  /**
+   * 歷史回放中（Phase 5）：feed 換成過去某個時間點的資料，位置換成那個地震的震央。
+   * back＝進入回放前的位置與條件，回到現在時還原。回放中不存檔、不自動更新資料；重新整理就回到現在。
+   */
+  history?: { quake: HistoryQuake; snap: HistorySnapshot; back: { place: Place; cond: Cond } };
 }
 
 /** 金門、連江在模型網格（21–26°N、119–123°E）外 */
@@ -170,6 +176,8 @@ export function coarsen(p: Place): Place {
 }
 
 export function save(s: State) {
+  // 歷史回放中的位置（震央）與條件只是暫時看看，不要蓋掉使用者自己的設定
+  if (s.history) return;
   try {
     const data: Saved = { place: coarsen(s.place), cond: s.cond, basemap: s.basemap, smooth: s.smooth, mapLayer: s.mapLayer };
     localStorage.setItem(KEY, JSON.stringify(data));

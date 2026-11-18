@@ -11,7 +11,7 @@ import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
 import { pickMainshock, MAINSHOCK_RULES } from "../core/aftershock";
 import { outlookSection } from "./outlook";
 import { rankPlaces, scanPlace, MIN_P, RANK_RADIUS_KM, type ScanHit } from "../core/scan";
-import { levelOf, pct, odds, ratioText, twTime, ago, esc, distText, LEVEL_EDGES } from "../format";
+import { levelOf, pct, odds, ratioText, twTime, twFull, ago, esc, distText, LEVEL_EDGES } from "../format";
 import { COARSE_M, coordText, epicenterText, loadedTowns } from "../geo/towns";
 import { pwa } from "../pwa";
 import { conditionNotes } from "./info";
@@ -74,7 +74,7 @@ function installCard(showHint: boolean): string {
  * 餘震卡：最近 7 天內 M5 以上（或 30 天內 M6 以上）的最大地震，震央周圍 50 km 之後再發生地震的機率。
  * 沒有這種地震就不出現。「大地震後偏低」這個限制直接寫在卡片上，不藏到 ⓘ 頁。
  */
-export function aftershockCard(f: Feed): string {
+export function aftershockCard(f: Feed, now?: number): string {
   const q = pickMainshock(f);
   if (!q) return "";
   // 震央在哪個鄉鎮區：界線檔在手機上判斷（main.ts 會在需要時載入）；還沒載入就先給座標
@@ -83,7 +83,7 @@ export function aftershockCard(f: Feed): string {
   const rule = MAINSHOCK_RULES.map((r) => `${r.days} 天內規模 ${r.minMl} 以上`).join("、或 ");
   return `
   <section class="card aftershock">
-    <div class="as-head"><b>最近的較大地震</b><span>${esc(twTime(q.time))}・${esc(ago(q.time))}</span></div>
+    <div class="as-head"><b>最近的較大地震</b><span>${esc(twTime(q.time))}・${esc(ago(q.time, now))}</span></div>
     <p class="as-quake">規模 ${q.ml.toFixed(1)}・深度 ${Math.round(q.depth_km)} 公里・震央${where.startsWith("離") ? "" : "在"}${esc(where)}</p>
     ${outlookSection(f, q, `<p>挑哪一個地震：資料發布前 ${esc(rule)}的地震中，規模最大的那一個。</p>`)}
     <p class="as-foot">統計機率，不是地震預報；最新消息以中央氣象署為準。<a href="#/expert/more">最近的地震 →</a></p>
@@ -240,9 +240,11 @@ export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" 
   ${status}
 
   <p class="fresh">
-    <span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>・<button type="button" class="linkbtn" data-act="share">分享</button>
+    ${s.history
+      ? `<span class="dot hist"></span>回放的時間點：${twFull(f.issued_at)}・<a href="#/history">換時間點</a>`
+      : `<span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>・<button type="button" class="linkbtn" data-act="share">分享</button>`}
   </p>
-  ${aftershockCard(f)}
+  ${aftershockCard(f, s.history ? Date.parse(f.issued_at) : undefined)}
   ${rankCard(f)}
 
   <details class="fold">
@@ -280,6 +282,7 @@ export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" 
       <a href="#/expert/mag">📈 換規模：機率怎麼隨規模變</a>
       <a href="#/expert/time">⏱ 換時間：機率怎麼隨時間變</a>
       <a href="#/expert/verify">✅ 驗證與原理：這個模型準不準</a>
+      <a href="#/history">🕰 歷史回放：大地震前後，模型怎麼說</a>
       <a href="${ICP_URL}?q=${encodeURIComponent(q)}" target="_blank" rel="noopener">🎲 拿「${esc(q)}」去「我也會地震預測」算算看矇中機率</a>
     </div>
   </details>

@@ -8,7 +8,7 @@ import {
 } from "../core/hazard";
 import { lineChart } from "./chart";
 import { pct, ratioText, twTime, ago, esc, levelOf } from "../format";
-import { LEVEL_EDGES } from "../format";
+import { LEVEL_EDGES, LEVEL_BACKTEST } from "../format";
 import { EXPTECH_CREDIT, intText, quakeRow, type Quake } from "../data/exptech";
 import { outlookSection } from "./outlook";
 import { condSliders } from "./sliders";
@@ -263,9 +263,10 @@ P(範圍)     = 1 − exp(−N(範圍))                卜瓦松：至少一次<
   <details class="fold"><summary>沒有用的東西：地磁前兆</summary><div class="fold-body">
     <p>我們測試過 8 個地磁站的資料當作「前兆」：用置換檢定（把地磁資料和地震的時間打亂再比）看有沒有比隨機好，<b>沒有找到證據</b>，所以模型不使用地磁。負結果也是結果。</p>
   </div></details>
-  <details class="fold"><summary>狀態門檻怎麼定（暫定）</summary><div class="fold-body">
+  <details class="fold"><summary>狀態門檻怎麼定（回測檢查過）</summary><div class="fold-body">
     <p>倍數 &lt; ${LEVEL_EDGES[0]}：和平常差不多；${LEVEL_EDGES[0]}–${LEVEL_EDGES[1]}：高一些；${LEVEL_EDGES[1]}–${LEVEL_EDGES[2]}：高不少；≥ ${LEVEL_EDGES[2]}：遠高於平常。</p>
-    <p>目前這份資料（3 天）全區 ${full.length} 格的分布：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${counts[i]}`).join("、")}。正式門檻會用回測期間各狀態出現的頻率來定，讓「高」不會天天出現。</p>
+    <p>目前這份資料（3 天）全區 ${full.length} 格的分布：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${counts[i]}`).join("、")}。</p>
+    <p><b>回測檢查</b>：2015–2026 測試期 ${LEVEL_BACKTEST.days.toLocaleString("zh-TW")} 天、20 個縣市、首頁預設條件（50 km・3 天・M5 以上），各狀態出現的比例：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${(LEVEL_BACKTEST.share[i] * 100).toFixed(1)}%`).join("、")}。「高不少」以上平均大約一個月一次，符合「不要天天出現」的目標，所以維持這組門檻。全台排行的第一名有 ${Math.round((1 - LEVEL_BACKTEST.topCounty[0]) * 100)}% 的天數至少「高一些」。</p>
   </div></details>
   <details class="fold"><summary>資料狀態</summary><div class="fold-body">
     <p>正式目錄到 ${twTime(f.data_status.catalog_end)}；之後 ${esc(String(f.data_status.gap_days))} 天用 ${esc(f.data_status.sources.join("、"))} 暫時補了 ${esc(String(f.data_status.n_provisional))} 筆。</p>
@@ -287,6 +288,13 @@ export function notYetCounted(f: State["feed"], q: Quake): boolean {
  */
 export function recentCard(s: State): string {
   const q = s.quakes, f = s.feed;
+  // 歷史回放中：列回放時間點之前 30 天的地震（正式目錄），不是現在的即時列表
+  if (s.history)
+    return `<div class="card" id="recent-quakes"><b>回放時間點之前的地震</b>
+      <p class="muted small">${esc(twTime(f.issued_at))} 之前 30 天、規模 3 以上（正式目錄，事後整理的資料）。現在的即時列表要先「回到現在」。</p>
+      <table class="tbl"><thead><tr><th>時間</th><th>規模</th><th>深度</th></tr></thead><tbody>
+      ${f.recent.slice(0, 30).map((e) => `<tr><td>${esc(twTime(e.time))}</td><td>${Number(e.ml).toFixed(1)}</td><td>${esc(String(Math.round(e.depth_km)))} km</td></tr>`).join("")}
+      </tbody></table></div>`;
   if (q && q.list.length) {
     const head = `<tr><th>時間</th><th>規模</th><th>最大震度</th><th>地點</th></tr>`;
     return `<div class="card" id="recent-quakes"><b>最近的地震</b>
@@ -323,7 +331,7 @@ function viewMore(s: State) {
   return `
   <h3 class="vh">更多</h3>
   <div class="card-list">
-    <div class="card dim"><b>歷史回放</b><p>選一個過去的日子（例如 2024-04-03 花蓮地震前後），看當時模型怎麼說。<span class="tag">之後做</span></p></div>
+    <a class="card cardlink" href="#/history"><b>歷史回放</b><p>2016 美濃、2018 花蓮、2022 池上、2024 花蓮地震前後，模型當時怎麼說（用事後資料重算）。</p><span class="link">打開 →</span></a>
     <div class="card"><b>資料下載</b><p>目前畫面用的整份資料（JSON，每格 10 個時間長度的期望數）。</p>
       <button class="btn" data-act="download">下載 feed.json</button></div>
     ${recentCard(s)}

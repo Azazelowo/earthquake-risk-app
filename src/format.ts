@@ -6,8 +6,20 @@ export interface Level {
   hint: string;
 }
 
-// 暫定門檻（倍數）。刻意不用綠色、不說「安全」：台灣本來就常有地震。
+// 門檻（倍數），2026-11-18 用回測檢查過（見 LEVEL_BACKTEST）。刻意不用綠色、不說「安全」：台灣本來就常有地震。
 export const LEVEL_EDGES = [1.5, 3, 10];
+
+/**
+ * 門檻的回測檢查（2026-11-18；破專題 app/state_frequency.py → docs/reports/state_frequency.md）：
+ * 測試期 2015-01-01～2026-09-30 每天、20 個縣市代表點、首頁預設條件（50 km・3 天・M5 以上），
+ * 各狀態出現的比例。share：所有縣市×天；topCounty：全台排行第一名那一天的狀態。
+ * 「高不少」以上約占 2.9%（平均一個月一次左右），符合「不要天天出現」的目標，所以維持上面的門檻。
+ */
+export const LEVEL_BACKTEST = {
+  days: 4291,
+  share: [0.8054, 0.1655, 0.0273, 0.0018],
+  topCounty: [0.1007, 0.6292, 0.2487, 0.0214],
+} as const;
 
 export function levelOf(ratio: number): Level {
   // 倍數算不出來（範圍內沒有模型格子）時不能落到最高等級；呼叫端應該先檢查 covered，這裡是最後一道保險
@@ -52,8 +64,16 @@ export function twTime(iso: string, withDate = true): string {
   return d.toLocaleString("zh-TW", o);
 }
 
-export function ago(iso: string): string {
-  const h = (Date.now() - new Date(iso).getTime()) / 36e5;
+/** 含年份的台灣時間，例：「2024/4/3 07:58」（歷史回放用） */
+export function twFull(iso: string): string {
+  return new Date(iso).toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
+/** 多久以前；now 預設是現在（歷史回放時傳回放的時間點） */
+export function ago(iso: string, now = Date.now()): string {
+  const h = (now - new Date(iso).getTime()) / 36e5;
   if (h < 1) return `${Math.max(1, Math.round(h * 60))} 分鐘前`;
   if (h < 48) return `${Math.round(h)} 小時前`;
   return `${Math.round(h / 24)} 天前`;

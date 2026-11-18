@@ -1,0 +1,135 @@
+{
+ "version": 1,
+ "model_version": "v1.1",
+ "train": [
+  "1995-01-01",
+  "2015-01-01"
+ ],
+ "note": "用事後整理好的正式目錄與 v1.1 參數重算；只用每個時間點之前的資料。",
+ "quakes": [
+  {
+   "id": "2016-meinong",
+   "name": "2016 美濃地震",
+   "time": "2016-02-05T19:57:26Z",
+   "ml": 6.6,
+   "lat": 22.922,
+   "lon": 120.544,
+   "snapshots": [
+    {
+     "id": "2016-meinong-before1h",
+     "label": "主震前 1 小時",
+     "issued_at": "2016-02-05T18:57:00Z"
+    },
+    {
+     "id": "2016-meinong-after1h",
+     "label": "主震後 1 小時",
+     "issued_at": "2016-02-05T20:57:00Z"
+    },
+    {
+     "id": "2016-meinong-after1d",
+     "label": "主震後 1 天",
+     "issued_at": "2016-02-06T19:57:00Z"
+    },
+    {
+     "id": "2016-meinong-after7d",
+     "label": "主震後 7 天",
+     "issued_at": "2016-02-12T19:57:00Z"
+    }
+   ],
+   "depth_km": 14.6
+  },
+  {
+   "id": "2018-hualien",
+   "name": "2018 花蓮地震",
+   "time": "2018-02-06T15:50:41Z",
+   "ml": 6.3,
+   "lat": 24.101,
+   "lon": 121.73,
+   "snapshots": [
+    {
+     "id": "2018-hualien-before1h",
+     "label": "主震前 1 小時",
+     "issued_at": "2018-02-06T14:50:00Z"
+    },
+    {
+     "id": "2018-hualien-after1h",
+     "label": "主震後 1 小時",
+     "issued_at": "2018-02-06T16:50:00Z"
+    },
+    {
+     "id": "2018-hualien-after1d",
+     "label": "主震後 1 天",
+     "issued_at": "2018-02-07T15:50:00Z"
+    },
+    {
+     "id": "2018-hualien-after7d",
+     "label": "主震後 7 天",
+     "issued_at": "2018-02-13T15:50:00Z"
+    }
+   ],
+   "depth_km": 6.3
+  },
+  {
+   "id": "2022-chishang",
+   "name": "2022 池上地震",
+   "time": "2022-09-18T06:44:15Z",
+   "ml": 6.8,
+   "lat": 23.137,
+   "lon": 121.196,
+   "snapshots": [
+    {
+     "id": "2022-chishang-before1h",
+     "label": "主震前 1 小時",
+     "issued_at": "2022-09-18T05:44:00Z"
+    },
+    {
+     "id": "2022-chishang-after1h",
+     "label": "主震後 1 小時",
+     "issued_at": "2022-09-18T07:44:00Z"
+    },
+    {
+     "id": "2022-chishang-after1d",
+     "label": "主震後 1 天",
+     "issued_at": "2022-09-19T06:44:00Z"
+    },
+    {
+     "id": "2022-chishang-after7d",
+     "label": "主震後 7 天",
+     "issued_at": "2022-09-25T06:44:00Z"
+    }
+   ],
+   "depth_km": 7.8
+  },
+  {
+   "id": "2024-hualien",
+   "name": "2024 花蓮地震",
+   "time": "2024-04-02T23:58:09Z",
+   "ml": 7.2,
+   "lat": 23.876,
+   "lon": 121.573,
+   "snapshots": [
+    {
+     "id": "2024-hualien-before1h",
+     "label": "主震前 1 小時",
+     "issued_at": "2024-04-02T22:58:00Z"
+    },
+    {
+     "id": "2024-hualien-after1h",
+     "label": "主震後 1 小時",
+     "issued_at": "2024-04-03T00:58:00Z"
+    },
+    {
+     "id": "2024-hualien-after1d",
+     "label": "主震後 1 天",
+     "issued_at": "2024-04-03T23:58:00Z"
+    },
+    {
+     "id": "2024-hualien-after7d",
+     "label": "主震後 7 天",
+     "issued_at": "2024-04-09T23:58:00Z"
+    }
+   ],
+   "depth_km": 19.7
+  }
+ ]
+}
