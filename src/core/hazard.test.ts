@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { makeMockFeed } from "../data/mock";
 import { levelOf } from "../format";
 import {
-  allWeights, assess, assessPoint, cellIndexAt, cellProbabilities, circleAreaKm2, coverage, inGrid, interpHorizon,
+  allWeights, assess, assessCircle, assessPoint, cellIndexAt, cellProbabilities, circleAreaKm2, coverage, inGrid, interpHorizon,
   isVerified, pointWeights, probability, regionAreaKm2, scaleMagnitude, FULL_COVERAGE, MIN_COVERAGE,
 } from "./hazard";
 
@@ -100,5 +100,15 @@ describe("已驗證／外推估計的標籤", () => {
     expect(isVerified(feed, 7, 3)).toBe(false); // M6.5 以上回測樣本極少
     expect(isVerified(feed, 3, 3)).toBe(false); // 低於 m_ref，目錄不完整
     expect(isVerified({ ...feed, backtest: [] }, 5, 3)).toBe(false);
+  });
+});
+
+describe("先算好面積比例再評估（assessCircle）", () => {
+  it("和 assessPoint 的結果完全相同，含網格內、邊緣、網格外", () => {
+    for (const [lat, lon, r] of [[22.63, 120.3, 50], [23.95, 121.72, 10], [25.9, 122.9, 100], [24.4367, 118.3186, 50]]) {
+      const w = pointWeights(feed, lat, lon, r);
+      for (const [m, T] of [[4, 1], [5, 3], [6, 30]])
+        expect(assessCircle(feed, w, lat, lon, r, m, T)).toEqual(assessPoint(feed, lat, lon, r, m, T));
+    }
   });
 });

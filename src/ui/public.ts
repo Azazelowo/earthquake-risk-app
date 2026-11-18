@@ -1,10 +1,14 @@
 // 大眾版首頁：一個狀態（和平常比的倍數決定顏色）＋絕對機率＋可展開的說明。
 // 提醒與資料限制集中在 ⓘ 頁（info.ts）；這裡只留「已驗證／外推估計」的小標籤。
 import type { State, Cond } from "../state";
+import type { Feed } from "../data/schema";
 import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
 import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
-import { levelOf, pct, odds, ratioText, twTime, ago, esc, distText } from "../format";
-import { COARSE_M } from "../geo/towns";
+import { pickMainshock, MAINSHOCK_RULES } from "../core/aftershock";
+import { outlookSection } from "./outlook";
+import { rankPlaces, scanPlace, MIN_P, RANK_RADIUS_KM, type ScanHit } from "../core/scan";
+import { levelOf, pct, odds, ratioText, twTime, ago, esc, distText, LEVEL_EDGES } from "../format";
+import { COARSE_M, coordText, epicenterText, loadedTowns } from "../geo/towns";
 import { pwa } from "../pwa";
 import { conditionNotes } from "./info";
 
@@ -62,6 +66,102 @@ function installCard(showHint: boolean): string {
   </div>`;
 }
 
+/**
+ * 餘震卡：最近 7 天內 M5 以上（或 30 天內 M6 以上）的最大地震，震央周圍 50 km 之後再發生地震的機率。
+ * 沒有這種地震就不出現。「大地震後偏低」這個限制直接寫在卡片上，不藏到 ⓘ 頁。
+ */
+export function aftershockCard(f: Feed): string {
+  const q = pickMainshock(f);
+  if (!q) return "";
+  // 震央在哪個鄉鎮區：界線檔在手機上判斷（main.ts 會在需要時載入）；還沒載入就先給座標
+  const idx = loadedTowns();
+  const where = idx ? epicenterText(idx, q.lat, q.lon) : coordText(q.lat, q.lon);
+  const rule = MAINSHOCK_RULES.map((r) => `${r.days} 天內規模 ${r.minMl} 以上`).join("、或 ");
+  return `
+  <section class="card aftershock">
+    <div class="as-head"><b>最近的較大地震</b><span>${esc(twTime(q.time))}・${esc(ago(q.time))}</span></div>
+    <p class="as-quake">規模 ${q.ml.toFixed(1)}・深度 ${Math.round(q.depth_km)} 公里・震央${where.startsWith("離") ? "" : "在"}${esc(where)}</p>
+    ${outlookSection(f, q, `<p>挑哪一個地震：資料發布前 ${esc(rule)}的地震中，規模最大的那一個。</p>`)}
+    <p class="as-foot">統計機率，不是地震預報；最新消息以中央氣象署為準。<a href="#/expert/more">最近的地震 →</a></p>
+  </section>`;
+}
+
+// ---------- 全台排行與條件掃描 ----------
+
+const IN_GRID = COUNTIES.filter((c) => !c.outside);
+const SCAN_TIMES = TIMES.map(([T]) => T);
+const MIN_P_TEXT = `${MIN_P * 100}%`;
+const rankCache = new WeakMap<Feed, ScanHit[]>();
+
+/** 全台排行只和資料有關（範圍固定 50 km），同一份資料只算一次（20 個縣市 × 20 組條件） */
+export function nationalRank(f: Feed): ScanHit[] {
+  let r = rankCache.get(f);
+  if (!r) rankCache.set(f, (r = rankPlaces(f, IN_GRID, RANK_RADIUS_KM, MAGS, SCAN_TIMES)));
+  return r;
+}
+
+/** 排行的一列：名次、名稱與條件、倍數與機率。整列是按鈕，attrs 決定點了之後套用什麼 */
+function hitRow(h: ScanHit, n: number, title: string, sub: string, attrs: string): string {
+  return `<li><button type="button" class="rk-item ${levelOf(h.ratio).key}" ${attrs}>
+    <span class="rk-n">${n}</span>
+    <span class="rk-t"><b>${esc(title)}</b><small>${esc(sub)}</small></span>
+    <span class="rk-r"><b>${ratioText(h.ratio)}</b><small>現在 ${pct(h.p)}・平常 ${pct(h.pBg)}</small></span>
+  </button></li>`;
+}
+
+/**
+ * 首頁的全台排行：各縣市周圍 50 km，所有規模 × 時間中「現在機率 ≥ 1%」且倍數最高的一組，依倍數排序。
+ * 標題寫「倍數最高」，不寫「最危險」。全部都低於「比平常高一些」的門檻時，不列名次（差距很小，排第一沒有意義），
+ * 改寫一句「目前全台沒有明顯高於平常的地方」，想看的人可以展開。
+ */
+export function rankCard(f: Feed): string {
+  const rank = nationalRank(f);
+  const head = `<div class="rk-head"><b>全台排行：和平常比，倍數最高的地方</b></div>`;
+  const cap = `各縣市周圍 ${RANK_RADIUS_KM} 公里，只列現在機率 ${MIN_P_TEXT} 以上的組合，每個縣市取倍數最高的一組`;
+  const foot = `<p class="rk-foot">統計機率，不是地震預報。點一項就換成那個地點和條件。</p>`;
+  if (!rank.length)
+    return `<section class="card rank">${head}<p class="rk-flat">目前沒有任何縣市的機率達到 ${MIN_P_TEXT}，無法排行。</p>${foot}</section>`;
+  const rows = rank.map((h, i) =>
+    hitRow(h, i + 1, h.place.name, `M${h.m} 以上・${timeLabel(h.T)}內`, `data-rank="${esc(h.place.name)}" data-m="${h.m}" data-t="${h.T}"`),
+  );
+  if (!(rank[0].ratio >= LEVEL_EDGES[0]))
+    return `
+  <section class="card rank">${head}
+    <p class="rk-flat">目前全台沒有明顯高於平常的地方（最高${ratioText(rank[0].ratio)}）。台灣本來就常有地震，防震準備照常。</p>
+    <details class="rk-more" data-fold="rank-flat"><summary>還是想看排序</summary>
+      <p class="rk-cap">${cap}。倍數差距很小，排在前面不代表那裡比較危險。</p>
+      <ol class="rk-list">${rows.join("")}</ol>
+    </details>
+    ${foot}
+  </section>`;
+  return `
+  <section class="card rank">${head}
+    <p class="rk-cap">${cap}</p>
+    <ol class="rk-list">${rows.slice(0, 3).join("")}</ol>
+    ${rows.length > 3 ? `<details class="rk-more" data-fold="rank-more"><summary>看前 ${rows.length} 名</summary><ol class="rk-list">${rows.slice(3).join("")}</ol></details>` : ""}
+    ${foot}
+  </section>`;
+}
+
+/** 「幫我找」：目前位置與範圍，所有規模 × 時間掃一遍，依倍數排序；點一項就套用那組規模與時間 */
+function scanBlock(s: State): string {
+  const c = s.cond, name = placeShort(s.place);
+  const hits = scanPlace(s.feed, { name, lat: s.place.lat, lon: s.place.lon }, c.radiusKm, MAGS, SCAN_TIMES).slice(0, 10);
+  let body: string;
+  if (!assessPoint(s.feed, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T).covered) body = `<p class="rk-flat">目前模型未涵蓋此區域，沒有可以比較的條件。</p>`;
+  else if (!hits.length) body = `<p class="rk-flat">沒有任何組合的機率達到 ${MIN_P_TEXT}。範圍很小時常見，可以把範圍調大再試。</p>`;
+  else
+    body = `${hits[0].ratio >= LEVEL_EDGES[0] ? "" : `<p class="rk-flat">每一組都和平常差不多，排在前面不代表比較危險。</p>`}
+      <ol class="rk-list">${hits
+        .map((h, i) => hitRow(h, i + 1, `M${h.m} 以上・${timeLabel(h.T)}內`, `周圍 ${h.radiusKm} km`, `data-apply='${JSON.stringify({ m: h.m, T: h.T })}'`))
+        .join("")}</ol>`;
+  return `
+    <details class="scan" data-fold="scan"><summary>🔍 幫我找：${esc(name)}倍數最高的條件</summary>
+      <p class="rk-cap">${esc(name)}周圍 ${c.radiusKm} 公里，規模 M${MAGS[0]}–M${MAGS[MAGS.length - 1]} × 時間 ${TIMES[0][1]}–${TIMES[TIMES.length - 1][1]} 全部算一遍，只列現在機率 ${MIN_P_TEXT} 以上的，依倍數排序。點一項就套用。</p>
+      ${body}
+    </details>`;
+}
+
 export function renderPublic(s: State, opt: { installHint: boolean }): string {
   const f = s.feed, c = s.cond;
   const a = assessPoint(f, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
@@ -106,6 +206,8 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   <p class="fresh">
     <span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>
   </p>
+  ${aftershockCard(f)}
+  ${rankCard(f)}
 
   <details class="fold">
     <summary>這個數字是什麼意思？</summary>
@@ -120,6 +222,7 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   <details class="fold">
     <summary>換個情境看看</summary>
     <div class="fold-body">
+      ${scanBlock(s)}
       <div class="scards">
         ${scenario(s, "如果是 M6 以上？", { m: 6 })}
         ${scenario(s, "如果看 7 天？", { T: 7 })}

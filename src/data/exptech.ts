@@ -83,7 +83,10 @@ export async function fetchQuakes(fetchFn: typeof fetch = fetch): Promise<Quake[
 /** 震度顯示：報告只給整數；0 級寫成「0」 */
 export const intText = (i: number) => `${i} 級`;
 
-/** 列表的一列（字串一律跳脫，ExpTech 的資料也是外部輸入） */
-export function quakeRow(q: Quake, time: (ms: number) => string): string {
-  return `<tr><td class="q-time">${esc(time(q.time))}</td><td class="q-num">M${q.mag.toFixed(1)}</td><td class="q-num">${esc(intText(q.maxInt))}</td><td class="q-loc">${esc(q.loc)}<small>深度 ${esc(String(Math.round(q.depth_km)))} km</small></td></tr>`;
+/**
+ * 列表的一列（字串一律跳脫，ExpTech 的資料也是外部輸入）。整列可以點，點了看震央附近之後再發生地震的機率。
+ * pending：這個地震發生在目前風險資料的發布時間之後，風險數字還沒反映它。
+ */
+export function quakeRow(q: Quake, time: (ms: number) => string, pending = false): string {
+  return `<tr class="q-row" data-quake="${esc(q.id)}" role="button" tabindex="0"><td class="q-time">${esc(time(q.time))}</td><td class="q-num">M${q.mag.toFixed(1)}</td><td class="q-num">${esc(intText(q.maxInt))}</td><td class="q-loc">${esc(q.loc)}<small>深度 ${esc(String(Math.round(q.depth_km)))} km</small>${pending ? `<span class="q-tag">還沒算進風險數字</span>` : ""}</td></tr>`;
 }

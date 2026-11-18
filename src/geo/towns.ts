@@ -175,7 +175,7 @@ export interface PlaceText {
   confident: boolean;
 }
 
-function coordText(lat: number, lon: number): string {
+export function coordText(lat: number, lon: number): string {
   return `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? "N" : "S"}, ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? "E" : "W"}`;
 }
 
@@ -213,7 +213,26 @@ export function describePlace(idx: TownIndex, lat: number, lon: number, accuracy
   return { label: `${name}附近`, detail: [offshore, accText].filter(Boolean).join("・"), confident: false };
 }
 
+/** 震央離最近的鄉鎮區超過這個距離（公尺）就只給座標 */
+export const EPICENTER_NEAR_M = 80_000;
+
+/**
+ * 震央的位置文字（餘震卡用）：在鄉鎮區內就講名字；在外面（多半是海上）就講離最近的鄉鎮區多遠。
+ * 震央本身就有幾公里的定位誤差，所以不加「附近」這種細分；也不說「海上」——網格西北角有中國大陸沿岸，
+ * 不在臺灣的鄉鎮區內不代表在海上。
+ */
+export function epicenterText(idx: TownIndex, lat: number, lon: number): string {
+  const first = townsNear(idx, lat, lon, EPICENTER_NEAR_M)[0];
+  if (!first) return coordText(lat, lon);
+  const name = first.town.county + first.town.name;
+  return first.distM === 0 ? name : `離${name}${distText(first.distM)}`;
+}
+
 let pending: Promise<TownIndex> | null = null;
+let loaded: TownIndex | null = null;
+
+/** 已經載入的界線檔；還沒載入就是 null。給整頁重畫時用（不會觸發下載）。 */
+export const loadedTowns = (): TownIndex | null => loaded;
 
 /** 界線檔約 200 KB，用到才載（第一次定位或點地圖時）；service worker 會存起來，之後離線也能用 */
 export function loadTowns(): Promise<TownIndex> {
@@ -223,7 +242,8 @@ export function loadTowns(): Promise<TownIndex> {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<TownTopology>;
       })
-      .then(buildIndex);
+      .then(buildIndex)
+      .then((idx) => (loaded = idx));
     pending.catch(() => (pending = null)); // 載入失敗（例如第一次開就離線）：下次再試
   }
   return pending;

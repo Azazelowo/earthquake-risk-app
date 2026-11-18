@@ -5,17 +5,19 @@
 import "./style.css";
 import { makeMockFeed } from "./data/mock";
 import { cachedFeed, loadFeed, staleHours } from "./data/feed";
-import { fetchQuakes } from "./data/exptech";
+import { fetchQuakes, type Quake } from "./data/exptech";
 import type { State, Cond, Place } from "./state";
 import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty } from "./state";
 import { distText, esc, twTime } from "./format";
 import { renderPublic, renderPlaceSheet, renderCondSheet } from "./ui/public";
-import { renderExpert, renderTabbar, renderLayersSheet, pickNumbers, type ExpertTab } from "./ui/expert";
+import { renderExpert, renderTabbar, renderLayersSheet, renderQuakeSheet, recentCard, pickNumbers, type ExpertTab } from "./ui/expert";
 import { renderInfo } from "./ui/info";
 import { mountMap, detachMap, setRadiusLive, focusCircle } from "./ui/map";
 import { showDisclaimer } from "./ui/disclaimer";
 import { DEFAULT_BASEMAP, setCartoKey } from "./ui/basemaps";
-import { loadTowns, describePlace } from "./geo/towns";
+import { loadTowns, loadedTowns, describePlace } from "./geo/towns";
+import { pickMainshock } from "./core/aftershock";
+import { RANK_RADIUS_KM } from "./core/scan";
 import { initPwa, promptInstall, checkUpdate, applyUpdate } from "./pwa";
 
 const saved = loadSaved();
@@ -34,7 +36,9 @@ const s: State = {
   mapFull: false,
   feedStatus: { origin: "loading", error: null },
 };
-let sheet: "" | "place" | "cond" | "layers" = "";
+let sheet: "" | "place" | "cond" | "layers" | "quake" = "";
+/** 地震列表點開的那一筆（sheet＝quake 時用） */
+let sheetQuake: Quake | null = null;
 /** ⓘ 頁按「返回」要回到的畫面 */
 let lastMain = "#/";
 /** 換頁後要捲到的區塊（例如從地圖設定跳到 ⓘ 頁的金鑰設定） */
@@ -79,7 +83,7 @@ function render() {
 
   // 重畫前先記下「使用者正在用的東西」，重畫後還原
   const samePage = renderedHash === location.hash;
-  const folds = samePage ? [...app.querySelectorAll("details")].map((d) => d.open) : [];
+  const openFolds = new Set(samePage ? [...app.querySelectorAll("details")].filter((d) => d.open).map(foldKey) : []);
   const active = document.activeElement as HTMLElement | null;
   const focusSel = !active || !app.contains(active) ? "" : active.id ? `#${active.id}` : active.dataset.range ? `[data-range="${active.dataset.range}"]` : "";
   const keyDraft = samePage ? (document.getElementById("carto-key") as HTMLInputElement | null)?.value ?? "" : "";
@@ -102,16 +106,35 @@ function render() {
   <main class="${expert ? "with-tabbar" : ""}">${body}</main>
   ${expert ? renderTabbar(r.tab) : `<footer class="foot">高科大地震風險評估實務專題・不是地震預報</footer>`}
   <div class="scrim ${sheet ? "show" : ""}" data-act="close"></div>
-  <div class="sheet ${sheet ? "show" : ""}">${sheet === "place" ? renderPlaceSheet(s) : sheet === "cond" ? renderCondSheet(s) : sheet === "layers" ? renderLayersSheet(s) : ""}</div>`;
+  <div class="sheet ${sheet ? "show" : ""}">${sheetHtml()}</div>`;
   renderedHash = location.hash;
 
   if (onMap) safely(() => mountMap(s, { onPick: pickOnMap }));
-  app.querySelectorAll("details").forEach((d, i) => {
-    if (folds[i]) d.open = true;
+  app.querySelectorAll("details").forEach((d) => {
+    if (openFolds.has(foldKey(d))) d.open = true;
   });
   const keyEl = document.getElementById("carto-key") as HTMLInputElement | null;
   if (keyEl && keyDraft) keyEl.value = keyDraft;
   if (focusSel) app.querySelector<HTMLElement>(focusSel)?.focus({ preventScroll: true });
+}
+
+/** 底部面板的內容；出錯時顯示錯誤卡片，不讓整頁壞掉 */
+function sheetHtml(): string {
+  return safely(() =>
+    sheet === "place" ? renderPlaceSheet(s)
+    : sheet === "cond" ? renderCondSheet(s)
+    : sheet === "layers" ? renderLayersSheet(s)
+    : sheet === "quake" && sheetQuake ? renderQuakeSheet(s, sheetQuake)
+    : "",
+  );
+}
+
+/**
+ * 摺疊區的識別：data-fold，沒有就用標題文字。不能用順序對應——餘震卡這類區塊會依資料出現或消失，
+ * 順序一變，展開的就會變成別的區塊。
+ */
+function foldKey(d: HTMLDetailsElement): string {
+  return d.dataset.fold ?? d.querySelector("summary")?.textContent ?? "";
 }
 
 /**
@@ -153,8 +176,11 @@ async function refreshQuakes() {
     const prev = s.quakes;
     s.quakes = { status: "error", list: prev?.list ?? [], error: e instanceof Error && e.name !== "TypeError" ? e.message : "無法連線", at: prev?.at ?? null };
   }
-  // 只有正在看列表時才重畫，避免打斷其他畫面的操作
-  if (location.hash.startsWith("#/expert/more")) render();
+  // 只有正在看列表時才更新，而且只換列表這一塊（審查 E4）：不打斷其他畫面的操作，也不關掉開著的面板
+  if (!location.hash.startsWith("#/expert/more")) return;
+  const box = document.getElementById("recent-quakes");
+  if (box) box.outerHTML = String(safely(() => recentCard(s)));
+  else render();
 }
 
 /** 下載最新資料後重畫；失敗時 loadFeed 會退回上次的資料或假資料 */
@@ -165,6 +191,21 @@ async function refreshFeed() {
   s.feed = r.feed;
   s.feedStatus = { origin: r.origin, error: r.error };
   render();
+  nameEpicenter();
+}
+
+/**
+ * 首頁的餘震卡要講震央在哪個鄉鎮區：界線檔還沒載入就先載，載好再重畫首頁。
+ * 判斷在手機上做（geo/towns.ts），不會把任何位置送出去。
+ */
+function nameEpicenter() {
+  if (loadedTowns() || !pickMainshock(s.feed)) return;
+  loadTowns().then(
+    () => route().mode === "public" && render(),
+    () => {
+      /* 載不到就繼續顯示座標 */
+    },
+  );
 }
 
 // ---------- 位置 ----------
@@ -240,7 +281,7 @@ const clampRadius = (v: number) => Math.min(Math.max(Math.round(v), RADIUS_MIN),
 
 app.addEventListener("click", (ev) => {
   const t = (ev.target as HTMLElement).closest<HTMLElement>(
-    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-basemap],[data-smooth]",
+    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-basemap],[data-smooth]",
   );
   if (!t) return;
   const d = t.dataset;
@@ -290,6 +331,20 @@ app.addEventListener("click", (ev) => {
     if (d.goto) return void (location.hash = d.goto);
     s.cond = { ...s.cond, ...JSON.parse(d.apply) };
     window.scrollTo({ top: 0, behavior: "smooth" });
+  } else if (d.rank) {
+    // 全台排行的一項：換成那個縣市（周圍 50 km）和那組規模、時間
+    const c = COUNTIES.find((x) => x.name === d.rank && !x.outside);
+    if (!c) return;
+    s.place = { lat: c.lat, lon: c.lon, label: c.name, source: "county" };
+    s.locate = "idle";
+    s.cond = { radiusKm: RANK_RADIUS_KM, m: +d.m!, T: +d.t! };
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } else if (d.quake) {
+    // 地震列表的一筆：打開面板看震央附近之後再發生地震的機率
+    const q = s.quakes?.list.find((x) => x.id === d.quake);
+    if (!q) return;
+    sheetQuake = q;
+    sheet = "quake";
   }
   save(s);
   render();
@@ -315,6 +370,13 @@ app.addEventListener("change", (ev) => {
 });
 
 document.addEventListener("keydown", (ev) => {
+  // 地震列表的列（role="button"）用鍵盤也能打開
+  const t = ev.target as HTMLElement;
+  if ((ev.key === "Enter" || ev.key === " ") && t.dataset?.quake) {
+    ev.preventDefault();
+    t.click();
+    return;
+  }
   if (ev.key !== "Escape") return;
   if (sheet) sheet = "";
   else if (s.mapFull) s.mapFull = false;
@@ -358,6 +420,7 @@ document.addEventListener("visibilitychange", () => {
 
 if (route().mode !== "info") lastMain = location.hash || "#/";
 render();
+nameEpicenter();
 // PWA 狀態（可安裝、離線就緒、有新版）只影響首頁的安裝提示與 ⓘ 頁；專家頁不必為此重畫
 initPwa(() => {
   if (route().mode !== "expert") render();

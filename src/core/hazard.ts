@@ -158,7 +158,14 @@ export interface PointAssessment extends Assessment {
 
 /** 以 (lat, lon) 為圓心、半徑 radiusKm 的評估，並檢查是否在模型範圍內 */
 export function assessPoint(feed: Feed, lat: number, lon: number, radiusKm: number, m: number, T: number): PointAssessment {
-  const w = pointWeights(feed, lat, lon, radiusKm);
+  return assessCircle(feed, pointWeights(feed, lat, lon, radiusKm), lat, lon, radiusKm, m, T);
+}
+
+/**
+ * 同 assessPoint，但圓內每格的面積比例 w（＝pointWeights(feed, lat, lon, radiusKm)）由呼叫端先算好。
+ * 同一個圓要換很多組規模、時間時（餘震卡、排行榜）用這個，省掉重算面積比例；計算本身完全相同。
+ */
+export function assessCircle(feed: Feed, w: number[], lat: number, lon: number, radiusKm: number, m: number, T: number): PointAssessment {
   const cov = coverage(feed, w, radiusKm);
   const a = assess(feed, w, m, T);
   return { ...a, coverage: cov, covered: inGrid(feed, lat, lon) && cov >= MIN_COVERAGE && a.pBg > 0 };
