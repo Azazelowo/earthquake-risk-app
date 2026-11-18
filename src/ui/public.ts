@@ -5,6 +5,7 @@ import type { Feed } from "../data/schema";
 import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
 import type { CondSlider } from "../state";
 import { condSliders } from "./sliders";
+import { FAV_MAX, FAV_NAME_MAX, type Fav } from "../favs";
 import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
 import { pickMainshock, MAINSHOCK_RULES } from "../core/aftershock";
 import { outlookSection } from "./outlook";
@@ -253,9 +254,44 @@ export function renderPublic(s: State, opt: { installHint: boolean }): string {
   `;
 }
 
-export function renderPlaceSheet(s: State): string {
+// ---------- 我的情境（Phase 4） ----------
+
+/** 情境的一行說明：「高雄市燕巢區・周圍 50 km・3 天內・M5 以上」或「全台・3 天內・M6 以上（打開地圖）」 */
+export function favDesc(f: Fav): string {
+  return f.kind === "all" || !f.place ? allDesc(f.cond) : `${placeShort(f.place)}・${condText(f.cond)}`;
+}
+const allDesc = (c: Cond) => `全台・${timeLabel(c.T)}內・M${c.m} 以上（打開地圖）`;
+
+/**
+ * 選位置面板最上面的「我的情境」：已存的情境（點了套用、✕ 刪除），以及把目前的位置與條件存起來的表單。
+ * 選「全台」或「目前位置」用 radio，切換時不必重畫（重畫會把打到一半的名稱洗掉；main.ts 也會保留草稿）。
+ */
+function favSection(s: State, favs: Fav[]): string {
+  const list = favs.length
+    ? `<ul class="fav-list">${favs
+        .map((f) => `<li>
+          <button type="button" class="fav" data-fav="${esc(f.id)}"><b>${esc(f.name)}</b><small>${esc(favDesc(f))}</small></button>
+          <button type="button" class="x fav-del" data-fav-del="${esc(f.id)}" aria-label="刪除「${esc(f.name)}」">✕</button></li>`)
+        .join("")}</ul>`
+    : `<p class="muted small">還沒有存任何情境。把常看的地點和條件存起來，下次點一下就好。</p>`;
+  return `
+  <section class="favs">
+    <h3>我的情境</h3>
+    ${list}
+    <details class="fav-add" data-fold="fav-add"><summary>＋ 把目前的位置和條件存起來</summary>
+      <label class="fav-field">名稱<input id="fav-name" type="text" maxlength="${FAV_NAME_MAX}" placeholder="${esc(placeShort(s.place))}" autocomplete="off"></label>
+      <label class="fav-kind"><input type="radio" name="fav-kind" value="place" checked><span>${esc(`${placeShort(s.place)}・${condText(s.cond)}`)}</span></label>
+      <label class="fav-kind"><input type="radio" name="fav-kind" value="all"><span>${esc(allDesc(s.cond))}</span></label>
+      <button type="button" class="btn primary wide" data-act="fav-save">儲存</button>
+      <p class="muted small" id="fav-msg">只存在這支手機，不會上傳；位置會降低精度（約 1 公里）。名稱一樣的會直接換掉，最多 ${FAV_MAX} 個。</p>
+    </details>
+  </section>`;
+}
+
+export function renderPlaceSheet(s: State, favs: Fav[] = []): string {
   return `
   <div class="sheet-head"><h2>選擇位置</h2><button class="x" data-act="close" aria-label="關閉">✕</button></div>
+  ${favSection(s, favs)}
   <button class="btn primary wide" data-act="locate">📍 使用目前位置</button>
   <a class="btn wide center" href="#/expert/map">🗺 在地圖上點選</a>
   <p class="muted small">位置只在你的手機上計算，不會傳出去。</p>

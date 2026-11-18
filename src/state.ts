@@ -125,17 +125,25 @@ export function sliderCond(c: Cond, key: CondSlider, raw: number): Cond {
   return { ...c, m: Math.min(Math.max(Math.round(raw * 10) / 10, M_MIN), M_MAX) };
 }
 
+/** 位置：只收看得懂的欄位；格式不對就整個不要 */
+export function sanitizePlace(raw: unknown): Place | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const p = raw as Record<string, any>;
+  if (!(num(p.lat) && num(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)) return undefined;
+  if (typeof p.label !== "string" || !["gps", "county", "default", "map"].includes(p.source)) return undefined;
+  const out: Place = { lat: p.lat, lon: p.lon, label: p.label.slice(0, 60), source: p.source };
+  if (typeof p.detail === "string") out.detail = p.detail.slice(0, 80);
+  if (num(p.accuracyM)) out.accuracyM = p.accuracyM;
+  return out;
+}
+
 /** 本機存的資料可能是舊版格式或被改過：只收看得懂的欄位，其餘丟掉用預設值 */
 export function sanitize(raw: unknown): Saved {
   const out: Saved = {};
   if (!raw || typeof raw !== "object") return out;
   const r = raw as Record<string, any>;
-  const p = r.place;
-  if (p && num(p.lat) && num(p.lon) && typeof p.label === "string" && ["gps", "county", "default", "map"].includes(p.source)) {
-    out.place = { lat: p.lat, lon: p.lon, label: p.label, source: p.source };
-    if (typeof p.detail === "string") out.place.detail = p.detail;
-    if (num(p.accuracyM)) out.place.accuracyM = p.accuracyM;
-  }
+  const place = sanitizePlace(r.place);
+  if (place) out.place = place;
   const c = r.cond;
   if (c && num(c.radiusKm) && num(c.T) && num(c.m) && validCond(c)) out.cond = { radiusKm: c.radiusKm, T: c.T, m: c.m };
   if (typeof r.basemap === "string") out.basemap = r.basemap;

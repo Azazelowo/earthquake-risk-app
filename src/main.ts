@@ -9,6 +9,7 @@ import { fetchQuakes, type Quake } from "./data/exptech";
 import type { State, Cond, Place } from "./state";
 import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty, sliderCond, type CondSlider } from "./state";
 import { sliderText } from "./ui/sliders";
+import { loadFavs, makeFav, removeFav, storeFavs, upsertFav, FAV_MAX, type Fav } from "./favs";
 import { distText, esc, twTime } from "./format";
 import { renderPublic, renderPlaceSheet, renderCondSheet, condPreview } from "./ui/public";
 import { renderExpert, renderTabbar, renderLayersSheet, renderQuakeSheet, recentCard, pickNumbers, type ExpertTab } from "./ui/expert";
@@ -40,6 +41,8 @@ const s: State = {
 let sheet: "" | "place" | "cond" | "layers" | "quake" = "";
 /** 地震列表點開的那一筆（sheet＝quake 時用） */
 let sheetQuake: Quake | null = null;
+/** 我的情境（只存在這支手機） */
+let favs: Fav[] = loadFavs();
 /** ⓘ 頁按「返回」要回到的畫面 */
 let lastMain = "#/";
 /** 換頁後要捲到的區塊（例如從地圖設定跳到 ⓘ 頁的金鑰設定） */
@@ -87,7 +90,9 @@ function render() {
   const openFolds = new Set(samePage ? [...app.querySelectorAll("details")].filter((d) => d.open).map(foldKey) : []);
   const active = document.activeElement as HTMLElement | null;
   const focusSel = !active || !app.contains(active) ? "" : active.id ? `#${active.id}` : active.dataset.range ? `[data-range="${active.dataset.range}"]` : "";
-  const keyDraft = samePage ? (document.getElementById("carto-key") as HTMLInputElement | null)?.value ?? "" : "";
+  // 打到一半的文字（CARTO 金鑰、情境名稱）與情境的「目前位置／全台」選項
+  const drafts = samePage ? DRAFT_IDS.map((id) => (document.getElementById(id) as HTMLInputElement | null)?.value ?? "") : [];
+  const favKind = samePage ? (document.querySelector('input[name="fav-kind"]:checked') as HTMLInputElement | null)?.value : undefined;
 
   detachMap();
   document.documentElement.classList.toggle("map-full", s.mapFull);
@@ -114,15 +119,46 @@ function render() {
   app.querySelectorAll("details").forEach((d) => {
     if (openFolds.has(foldKey(d))) d.open = true;
   });
-  const keyEl = document.getElementById("carto-key") as HTMLInputElement | null;
-  if (keyEl && keyDraft) keyEl.value = keyDraft;
+  DRAFT_IDS.forEach((id, i) => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (el && drafts[i]) el.value = drafts[i];
+  });
+  if (favKind === "all" || favKind === "place") {
+    const radio = document.querySelector<HTMLInputElement>(`input[name="fav-kind"][value="${favKind}"]`);
+    if (radio) radio.checked = true;
+  }
   if (focusSel) app.querySelector<HTMLElement>(focusSel)?.focus({ preventScroll: true });
+}
+
+/** 重畫時要保留內容的輸入框 */
+const DRAFT_IDS = ["carto-key", "fav-name"];
+
+/** 把目前的位置與條件存成情境（只存在這支手機） */
+function saveFav() {
+  const nameEl = document.getElementById("fav-name") as HTMLInputElement | null;
+  const kind = document.querySelector<HTMLInputElement>('input[name="fav-kind"]:checked')?.value === "all" ? "all" : "place";
+  const msg = document.getElementById("fav-msg");
+  const next = upsertFav(favs, makeFav(nameEl?.value ?? "", kind, s.place, s.cond));
+  if (!next) {
+    if (msg) msg.textContent = `已經存了 ${FAV_MAX} 個，先刪掉一個再存（名稱一樣的會直接換掉）。`;
+    return;
+  }
+  if (!storeFavs(next)) {
+    if (msg) msg.textContent = "這個瀏覽器沒辦法存資料（可能是無痕模式），情境沒有存起來。";
+    return;
+  }
+  favs = next;
+  if (nameEl) nameEl.value = "";
+  // 存好就把表單收起來，新的情境出現在上面的清單
+  const form = document.querySelector<HTMLDetailsElement>("details.fav-add");
+  if (form) form.open = false;
+  render();
 }
 
 /** 底部面板的內容；出錯時顯示錯誤卡片，不讓整頁壞掉 */
 function sheetHtml(): string {
   return safely(() =>
-    sheet === "place" ? renderPlaceSheet(s)
+    sheet === "place" ? renderPlaceSheet(s, favs)
     : sheet === "cond" ? renderCondSheet(s)
     : sheet === "layers" ? renderLayersSheet(s)
     : sheet === "quake" && sheetQuake ? renderQuakeSheet(s, sheetQuake)
@@ -282,7 +318,7 @@ const clampRadius = (v: number) => Math.min(Math.max(Math.round(v), RADIUS_MIN),
 
 app.addEventListener("click", (ev) => {
   const t = (ev.target as HTMLElement).closest<HTMLElement>(
-    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-basemap],[data-smooth]",
+    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-fav],[data-fav-del],[data-basemap],[data-smooth]",
   );
   if (!t) return;
   const d = t.dataset;
@@ -295,6 +331,7 @@ app.addEventListener("click", (ev) => {
   else if (d.act === "map-full") s.mapFull = !s.mapFull;
   else if (d.act === "reset-cond") s.cond = { ...DEFAULT_COND };
   else if (d.act === "download") return download();
+  else if (d.act === "fav-save") return saveFav();
   else if (d.act === "reload") return location.reload();
   else if (d.act === "show-disclaimer") return void showDisclaimer(s.feed.mock, true);
   else if (d.act === "install") return void promptInstall();
@@ -346,6 +383,26 @@ app.addEventListener("click", (ev) => {
     if (!q) return;
     sheetQuake = q;
     sheet = "quake";
+  } else if (d.favDel) {
+    const f = favs.find((x) => x.id === d.favDel);
+    if (!f || !confirm(`刪除情境「${f.name}」？`)) return;
+    favs = removeFav(favs, f.id);
+    storeFavs(favs);
+  } else if (d.fav) {
+    // 套用情境：地點＋條件；「全台」情境打開專家版的全台地圖
+    const f = favs.find((x) => x.id === d.fav);
+    if (!f) return;
+    sheet = "";
+    if (f.kind === "all" || !f.place) {
+      s.cond = { ...s.cond, m: f.cond.m, T: f.cond.T };
+      save(s);
+      location.hash = "#/expert/map";
+      return;
+    }
+    s.place = { ...f.place, detail: `我的情境：${f.name}` };
+    s.locate = "idle";
+    s.cond = { ...f.cond };
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
   save(s);
   render();

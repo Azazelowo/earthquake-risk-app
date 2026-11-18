@@ -4,7 +4,8 @@ import { makeMockFeed } from "../data/mock";
 import type { Feed } from "../data/schema";
 import type { State } from "../state";
 import { DEFAULT_COND } from "../state";
-import { aftershockCard, condPreview, rankCard, renderCondSheet, renderPublic } from "./public";
+import { aftershockCard, condPreview, rankCard, renderCondSheet, renderPlaceSheet, renderPublic } from "./public";
+import { makeFav } from "../favs";
 import { renderExpert } from "./expert";
 
 const ISSUED = new Date("2026-11-18T00:30:00Z");
@@ -120,5 +121,30 @@ describe("調整條件面板的滑桿（Phase 4）", () => {
     expect(renderExpert(s, "map")).toMatch(/data-range="c-mag"[\s\S]*data-range="c-time"/);
     expect(renderExpert(s, "mag")).toMatch(/data-range="c-radius"[\s\S]*data-range="c-time"/);
     expect(renderExpert(s, "time")).toMatch(/data-range="c-radius"[\s\S]*data-range="c-mag"/);
+  });
+});
+
+describe("選位置面板的「我的情境」", () => {
+  it("沒有情境時說明怎麼用；有存檔表單與兩個選項", () => {
+    const html = renderPlaceSheet(state(makeMockFeed(ISSUED)), []);
+    expect(html).toContain("還沒有存任何情境");
+    expect(html).toContain('id="fav-name"');
+    expect(html).toContain('value="all"');
+    expect(html).toContain("全台・3 天內・M5 以上（打開地圖）");
+    expect(html).toContain("只存在這支手機");
+  });
+
+  it("列出情境與說明；名稱是使用者輸入的，一律跳脫", () => {
+    const evil = '<img src=x onerror="alert(1)">';
+    const favs = [
+      makeFav(evil, "place", { lat: 22.63, lon: 120.3, label: "高雄市", source: "county" }, { radiusKm: 30, T: 1, m: 4 }, "id1"),
+      makeFav("全台M6+", "all", { lat: 22.63, lon: 120.3, label: "高雄市", source: "county" }, { radiusKm: 50, T: 7, m: 6 }, "id2"),
+    ];
+    const html = renderPlaceSheet(state(makeMockFeed(ISSUED)), favs);
+    expect(html).not.toContain("<img");
+    expect(html).toContain('data-fav="id1"');
+    expect(html).toContain('data-fav-del="id2"');
+    expect(html).toContain("高雄市・周圍 30 km・1 天內・M4 以上");
+    expect(html).toContain("全台・7 天內・M6 以上（打開地圖）");
   });
 });
