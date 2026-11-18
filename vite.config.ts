@@ -28,8 +28,11 @@ function swPlugin(): Plugin {
         }
       };
       walk(outDir);
-      // icons/ 只有安裝時由系統讀取，不必預存；sw.js 不能快取自己
-      const assets = files.filter((f) => f !== "sw.js" && !f.startsWith("icons/") && !f.endsWith(".map")).sort();
+      // icons/ 只有安裝時由系統讀取，不必預存；sw.js 不能快取自己；
+      // history/ 是歷史回放的資料（十幾份、共約 2 MB），點開才下載（看過的由 runtime 快取留著），不預存
+      const assets = files
+        .filter((f) => f !== "sw.js" && !f.startsWith("icons/") && !f.startsWith("history/") && !f.endsWith(".map"))
+        .sort();
       const hash = createHash("sha256");
       for (const f of assets) hash.update(f).update(readFileSync(join(outDir, f)));
       const version = hash.digest("hex").slice(0, 12);

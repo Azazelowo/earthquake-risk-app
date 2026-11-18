@@ -5,6 +5,8 @@
 import "./style.css";
 import { makeMockFeed } from "./data/mock";
 import { cachedFeed, loadFeed, staleHours } from "./data/feed";
+import { findSnapshot, loadHistoryFeed, loadHistoryIndex } from "./data/history";
+import { historyBanner, renderHistory, type HistoryView } from "./ui/history";
 import { fetchQuakes, type Quake } from "./data/exptech";
 import type { State, Cond, Place } from "./state";
 import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty, placeShort, sliderCond, type CondSlider } from "./state";
@@ -46,6 +48,8 @@ let shareLoc = false;
 let sharedKind: "" | "place" | "cond" = "";
 /** 地震列表點開的那一筆（sheet＝quake 時用） */
 let sheetQuake: Quake | null = null;
+/** 歷史回放頁的清單（第一次打開 #/history 才下載） */
+let historyView: HistoryView = { status: "idle" };
 /** 我的情境（只存在這支手機） */
 let favs: Fav[] = loadFavs();
 /** ⓘ 頁按「返回」要回到的畫面 */
@@ -75,9 +79,10 @@ let installHint = flag.get(INSTALL_HINT_KEY) !== "off";
 
 const app = document.getElementById("app")!;
 
-type Route = { mode: "public" } | { mode: "info" } | { mode: "expert"; tab: ExpertTab };
+type Route = { mode: "public" } | { mode: "info" } | { mode: "history" } | { mode: "expert"; tab: ExpertTab };
 function route(): Route {
   if (/^#\/info/.test(location.hash)) return { mode: "info" };
+  if (/^#\/history/.test(location.hash)) return { mode: "history" };
   const m = location.hash.match(/^#\/expert\/(map|mag|time|verify|more)/);
   return m ? { mode: "expert", tab: m[1] as ExpertTab } : { mode: "public" };
 }
@@ -101,7 +106,13 @@ function render() {
 
   detachMap();
   document.documentElement.classList.toggle("map-full", s.mapFull);
-  const body = safely(() => (info ? renderInfo(s, lastMain) : expert ? renderExpert(s, r.tab) : renderPublic(s, { installHint, shared: sharedKind })));
+  if (r.mode === "history" && historyView.status === "idle") void openHistoryIndex();
+  const body = safely(() =>
+    info ? renderInfo(s, lastMain)
+    : r.mode === "history" ? renderHistory(s, historyView)
+    : expert ? renderExpert(s, r.tab)
+    : renderPublic(s, { installHint, shared: sharedKind }),
+  );
   app.innerHTML = `
   <header class="top">
     <a class="brand" href="#/"><img src="./icon.svg" alt=""><span>臺灣地震風險評估</span></a>
@@ -198,6 +209,8 @@ function safely<T>(fn: () => T): T | string {
 
 /** 畫面最上方的資料狀態提示：假資料、離線、過期都要讓人一眼看到（審查 S-12、NFR-R4） */
 function feedBar(): string {
+  // 歷史回放中：只顯示回放的提示（資料本來就是過去的，不算過期）
+  if (s.history) return historyBanner(s);
   const st = s.feedStatus, f = s.feed;
   if (f.mock && st?.origin === "loading") return `<div class="mockbar">正在取得最新資料…</div>`;
   if (f.mock && st?.origin === "mock")
@@ -228,6 +241,8 @@ async function refreshQuakes() {
 
 /** 下載最新資料後重畫；失敗時 loadFeed 會退回上次的資料或假資料 */
 async function refreshFeed() {
+  // 歷史回放中不換資料（回到現在時會重新抓）
+  if (s.history) return;
   const r = await loadFeed();
   // 畫面上已經有這次開啟時下載到的資料，這次失敗就保留它，不要換成更舊的快取或假資料
   if (r.origin !== "network" && s.feedStatus?.origin === "network") return;
@@ -324,7 +339,7 @@ const clampRadius = (v: number) => Math.min(Math.max(Math.round(v), RADIUS_MIN),
 
 app.addEventListener("click", (ev) => {
   const t = (ev.target as HTMLElement).closest<HTMLElement>(
-    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-fav],[data-fav-del],[data-basemap],[data-smooth]",
+    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-fav],[data-fav-del],[data-history],[data-basemap],[data-smooth]",
   );
   if (!t) return;
   const d = t.dataset;
@@ -342,6 +357,8 @@ app.addEventListener("click", (ev) => {
   else if (d.act === "share-go") return void shareNow();
   else if (d.act === "share-copy") return void copyLink();
   else if (d.act === "dismiss-shared") sharedKind = "";
+  else if (d.act === "history-exit") return exitHistory();
+  else if (d.act === "history-retry") return (historyView = { status: "idle" }), render();
   else if (d.act === "reload") return location.reload();
   else if (d.act === "show-disclaimer") return void showDisclaimer(s.feed.mock, true);
   else if (d.act === "install") return void promptInstall();
@@ -393,6 +410,8 @@ app.addEventListener("click", (ev) => {
     if (!q) return;
     sheetQuake = q;
     sheet = "quake";
+  } else if (d.history) {
+    return void enterHistory(d.history);
   } else if (d.favDel) {
     const f = favs.find((x) => x.id === d.favDel);
     if (!f || !confirm(`刪除情境「${f.name}」？`)) return;
@@ -516,6 +535,63 @@ setInterval(() => document.visibilityState === "visible" && void refreshQuakes()
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && Date.now() - (s.quakes?.at ?? 0) > 60e3) void refreshQuakes();
 });
+
+// ---------- 歷史回放（Phase 5） ----------
+
+async function openHistoryIndex() {
+  historyView = { status: "loading" };
+  try {
+    historyView = { status: "ok", index: await loadHistoryIndex() };
+  } catch (e) {
+    historyView = { status: "error", error: e instanceof Error && e.name !== "TypeError" ? e.message : "無法連線" };
+  }
+  if (route().mode === "history") render();
+}
+
+/**
+ * 進入某個時間點：feed 換成那時的資料、位置換到震央、條件回到預設（各時間點才好比較）。
+ * 原本的位置與條件記在 history.back，回到現在時還原；回放中不存檔（state.save 會略過）。
+ */
+async function enterHistory(id: string) {
+  if (historyView.status !== "ok") return;
+  const hit = findSnapshot(historyView.index, id);
+  if (!hit) return;
+  const index = historyView.index;
+  historyView = { status: "ok", index, loadingId: id };
+  render();
+  try {
+    const feed = await loadHistoryFeed(id);
+    const back = s.history?.back ?? { place: s.place, cond: s.cond };
+    s.history = { quake: hit.quake, snap: hit.snap, back };
+    s.feed = feed;
+    s.place = { lat: hit.quake.lat, lon: hit.quake.lon, label: `${hit.quake.name}震央`, detail: "歷史回放", source: "map" };
+    s.cond = { ...DEFAULT_COND };
+    s.locate = "idle";
+    sheet = "";
+    historyView = { status: "ok", index };
+    location.hash = "#/";
+    nameEpicenter();
+  } catch (e) {
+    historyView = { status: "ok", index, error: `這個時間點的資料載入失敗（${e instanceof Error && e.name !== "TypeError" ? e.message : "無法連線"}）` };
+    render();
+  }
+}
+
+/** 回到現在：還原位置與條件，換回最新的資料 */
+function exitHistory() {
+  const h = s.history;
+  if (!h) return;
+  s.history = undefined;
+  s.place = h.back.place;
+  s.cond = h.back.cond;
+  s.feed = cachedFeed() ?? makeMockFeed();
+  s.feedStatus = { origin: "loading", error: null };
+  sheet = "";
+  save(s);
+  if (route().mode === "history") location.hash = "#/";
+  else render();
+  void refreshFeed();
+}
 
 // ---------- 分享網址 ----------
 
