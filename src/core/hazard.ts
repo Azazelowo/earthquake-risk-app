@@ -172,7 +172,7 @@ export function assessCircle(feed: Feed, w: number[], lat: number, lon: number, 
 }
 
 /**
- * 這組條件是否在回測驗證過的範圍內。只用來決定畫面上的小標籤（已驗證／外推估計），不影響計算。
+ * 這組條件是否落在回測涵蓋的範圍內（不看樣本數，樣本數見 backtestTag）。不影響計算。
  * 規模：m_ref ≤ m < 6.5（更小的目錄不完整、更大的回測樣本極少，同 reliabilityNotes）；時間：回測表涵蓋的範圍內。
  */
 export function isVerified(feed: Feed, m: number, T: number): boolean {
@@ -182,19 +182,45 @@ export function isVerified(feed: Feed, m: number, T: number): boolean {
   return T >= Math.min(...ts) * (1 - 1e-9) && T <= Math.max(...ts) * (1 + 1e-9);
 }
 
+/** 回測組地震數少於這個值，校準數字不穩（標籤顯示「回測樣本有限」） */
+export const MIN_BACKTEST_EVENTS = 20;
+
+/** 規模與（對數）時間距離最近的回測組 */
+export function nearestBacktest(feed: Feed, m: number, T: number): BacktestRow | null {
+  let best: BacktestRow | null = null, bestD = Infinity;
+  for (const r of feed.backtest) {
+    const dd = Math.abs(r.m - m) + Math.abs(Math.log(r.horizon_days) - Math.log(T));
+    if (dd < bestD) (bestD = dd), (best = r);
+  }
+  return best;
+}
+
+export type BacktestTag = "ok" | "thin" | "ext";
+export const BACKTEST_TAG_LABEL: Record<BacktestTag, string> = {
+  ok: "回測涵蓋範圍",
+  thin: "回測樣本有限",
+  ext: "外推估計",
+};
+
+/**
+ * 畫面上的小標籤。在回測涵蓋範圍內不等於可信：最接近的回測組地震太少時改標「回測樣本有限」。
+ * 只影響標籤，不影響計算。
+ */
+export function backtestTag(feed: Feed, m: number, T: number): BacktestTag {
+  if (!isVerified(feed, m, T)) return "ext";
+  const r = nearestBacktest(feed, m, T);
+  return r && r.n_events >= MIN_BACKTEST_EVENTS ? "ok" : "thin";
+}
+
 /** 可信度提示（對應 Python reliability） */
 export function reliabilityNotes(feed: Feed, m: number, T: number): string[] {
   const notes: string[] = [];
   const mRef = feed.params.m_ref;
   if (m < mRef) notes.push(`規模門檻低於 M${mRef}：小地震紀錄不完整，這是往下外推的。`);
   if (m >= 6.5) notes.push("M6.5 以上在回測期間樣本極少，只能當量級參考。");
-  let best: BacktestRow | null = null, bestD = Infinity;
-  for (const r of feed.backtest) {
-    const dd = Math.abs(r.m - m) + Math.abs(Math.log(r.horizon_days) - Math.log(T));
-    if (dd < bestD) (bestD = dd), (best = r);
-  }
+  const best = nearestBacktest(feed, m, T);
   if (best) {
-    if (best.n_events < 20) notes.push(`最接近的回測組只有 ${best.n_events} 個地震，校準數字不穩。`);
+    if (best.n_events < MIN_BACKTEST_EVENTS) notes.push(`最接近的回測組只有 ${best.n_events} 個地震，校準數字不穩。`);
     if (best.ratio > 1.25) notes.push(`回測中這類組合系統性高估（預測÷實際≈${best.ratio.toFixed(2)}），實際可能比顯示的低。`);
     else if (best.ratio < 0.8) notes.push(`回測中這類組合系統性低估（預測÷實際≈${best.ratio.toFixed(2)}），實際可能比顯示的高。`);
   }

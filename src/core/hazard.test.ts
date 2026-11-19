@@ -5,7 +5,7 @@ import { makeMockFeed } from "../data/mock";
 import { levelOf } from "../format";
 import {
   allWeights, assess, assessCircle, assessPoint, cellIndexAt, cellProbabilities, circleAreaKm2, coverage, inGrid, interpHorizon,
-  isVerified, pointWeights, probability, regionAreaKm2, scaleMagnitude, FULL_COVERAGE, MIN_COVERAGE,
+  isVerified, backtestTag, nearestBacktest, MIN_BACKTEST_EVENTS, pointWeights, probability, regionAreaKm2, scaleMagnitude, FULL_COVERAGE, MIN_COVERAGE,
 } from "./hazard";
 
 const feed = makeMockFeed(new Date("2026-11-15T12:00:00Z"));
@@ -92,14 +92,26 @@ describe("範圍與模型網格", () => {
   });
 });
 
-describe("已驗證／外推估計的標籤", () => {
-  it("回測涵蓋的規模與時間是已驗證；太小、太大的規模是外推", () => {
+describe("回測涵蓋／樣本有限／外推估計的標籤", () => {
+  it("回測涵蓋的規模與時間在範圍內；太小、太大的規模是外推", () => {
     expect(isVerified(feed, 5, 3)).toBe(true);
     expect(isVerified(feed, 4, 1 / 24)).toBe(true);
     expect(isVerified(feed, 6, 30)).toBe(true);
     expect(isVerified(feed, 7, 3)).toBe(false); // M6.5 以上回測樣本極少
     expect(isVerified(feed, 3, 3)).toBe(false); // 低於 m_ref，目錄不完整
     expect(isVerified({ ...feed, backtest: [] }, 5, 3)).toBe(false);
+  });
+
+  it("回測涵蓋範圍內，最接近的回測組地震太少就標「回測樣本有限」", () => {
+    expect(backtestTag(feed, 5, 3)).toBe("ok");
+    expect(nearestBacktest(feed, 6, 1 / 24)!.n_events).toBeLessThan(MIN_BACKTEST_EVENTS);
+    expect(backtestTag(feed, 6, 1 / 24)).toBe("thin");
+    expect(backtestTag(feed, 7, 3)).toBe("ext"); // 範圍外一律外推，不看樣本數
+    // 線上 feed 的真實情況：M5・1 小時只有 4 個地震
+    const real = { ...feed, backtest: [{ m: 5, horizon_days: 1 / 24, auc: 0.9727, ratio: 0.4648, n_events: 4 },
+      { m: 5, horizon_days: 30, auc: 0.9, ratio: 1, n_events: 900 }] };
+    expect(backtestTag(real, 5, 1 / 24)).toBe("thin");
+    expect(backtestTag(real, 5, 30)).toBe("ok");
   });
 });
 

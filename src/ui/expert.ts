@@ -4,7 +4,7 @@ import type { BacktestRow } from "../data/schema";
 import { RADII, RADIUS_MIN, RADIUS_MAX, RADIUS_STEP, SMOOTH_LABELS, TIMES, MAGS, timeLabel, placeShort } from "../state";
 import {
   pointWeights, allWeights, regionRef, scaleMagnitude, probability, magnitudeAtProbability, reliabilityNotes, interpHorizon,
-  assessPoint, cellIndexAt, cellProbabilities, FULL_COVERAGE,
+  assessPoint, cellIndexAt, cellProbabilities, FULL_COVERAGE, MIN_BACKTEST_EVENTS,
 } from "../core/hazard";
 import { lineChart } from "./chart";
 import { pct, ratioText, twTime, ago, esc, levelOf } from "../format";
@@ -227,7 +227,9 @@ function matrix(f: State["feed"], title: string, val: (r: BacktestRow) => string
   const ts = [...new Set(f.backtest.map((r) => r.horizon_days))].sort((a, b) => a - b);
   const cell = (m: number, t: number) => {
     const r = f.backtest.find((x) => x.m === m && x.horizon_days === t);
-    return r ? `<td class="${bad(r) ? "bad" : ""}" title="${r.n_events} 個地震">${val(r)}</td>` : "<td>—</td>";
+    if (!r) return "<td>—</td>";
+    const thin = r.n_events < MIN_BACKTEST_EVENTS;
+    return `<td class="${bad(r) ? "bad" : ""}">${val(r)}<small class="${thin ? "thin" : ""}">n=${r.n_events}</small></td>`;
   };
   return `<p class="mt-title">${title}</p><table class="tbl mtx"><thead><tr><th></th>${ts.map((t) => `<th>${timeLabel(t)}</th>`).join("")}</tr></thead>
   <tbody>${ms.map((m) => `<tr><th>M${m}+</th>${ts.map((t) => cell(m, t)).join("")}</tr>`).join("")}</tbody></table>`;
@@ -249,6 +251,7 @@ function viewVerify(s: State) {
   <p>回測：用 1995–2014 年的資料定好參數，再拿 2015 年之後每一天「當時只知道過去」的預測，和真的有沒有發生比。</p>
   ${matrix(f, "AUC（越接近 1 越能分辨哪裡會發生）", (r) => r.auc.toFixed(2), () => false)}
   ${matrix(f, "預測÷實際（1 最好，黃色＝偏差超過 25%）", (r) => r.ratio.toFixed(2), (r) => r.ratio > 1.25 || r.ratio < 0.8)}
+  <p class="muted small">n＝該組回測期間真的發生的地震數。n 小於 ${MIN_BACKTEST_EVENTS}（粗體標色）時，AUC 和預測÷實際都很不穩，不能當作「已證明可靠」。AUC 高只代表分辨得出哪裡比較可能發生，不代表機率數字準；機率準不準要看預測÷實際。</p>
   <details class="fold"><summary>AUC、預測÷實際是什麼？</summary><div class="fold-body">
     <p><b>AUC</b>：把「有發生」和「沒發生」的格子各抽一個，模型給有發生的那格較高機率的比例。0.5＝亂猜、1＝完美。</p>
     <p><b>預測÷實際</b>：預測的總數÷真的發生的總數。1 最好；大於 1 是高估（例如 1 天、M6 以上）。</p>

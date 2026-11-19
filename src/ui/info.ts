@@ -1,8 +1,8 @@
 // ⓘ 資訊頁：把首頁原本的黃色警示、資料限制、免責說明、設定與授權集中在這裡。
-// 首頁只留一個「已驗證／外推估計」的小標籤——提醒放太多，重要的反而沒人看。
+// 首頁只留一個「回測涵蓋／樣本有限／外推估計」的小標籤——提醒放太多，重要的反而沒人看。
 import type { State } from "../state";
 import { timeLabel } from "../state";
-import { assessPoint, isVerified, reliabilityNotes, undercountAt, FULL_COVERAGE } from "../core/hazard";
+import { assessPoint, backtestTag, nearestBacktest, BACKTEST_TAG_LABEL, reliabilityNotes, undercountAt, FULL_COVERAGE } from "../core/hazard";
 import { esc, twTime, ago } from "../format";
 import { pwa } from "../pwa";
 import { disclaimerPoints } from "./disclaimer";
@@ -80,15 +80,17 @@ function sourcesSection(s: State): string {
 export function renderInfo(s: State, backHref: string): string {
   const f = s.feed, c = s.cond;
   const a = assessPoint(f, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
-  const verified = a.covered && isVerified(f, c.m, c.T);
+  const bt = backtestTag(f, c.m, c.T);
+  const near = nearestBacktest(f, c.m, c.T);
   const notes = conditionNotes(s);
   const ds = f.data_status;
   const tag = !a.covered
     ? `<span class="vtag ext">未涵蓋</span>`
-    : verified ? `<span class="vtag ok">已驗證範圍</span>` : `<span class="vtag ext">外推估計</span>`;
+    : `<span class="vtag ${bt}">${BACKTEST_TAG_LABEL[bt]}</span>`;
   const tagText = !a.covered ? ""
-    : verified ? "這組規模與時間在回測驗證過的範圍內。"
-    : "這組條件超出回測驗證過的範圍（規模太小、太大，或時間超出範圍），數字是模型外推的，只能當量級參考。";
+    : bt === "ok" ? `這組規模與時間在回測涵蓋的範圍內（最接近的回測組有 ${near?.n_events} 個地震）。回測涵蓋不代表機率一定準：AUC 只看分辨能力，校準請看「預測÷實際」。`
+    : bt === "thin" ? `這組規模與時間在回測涵蓋的範圍內，但最接近的回測組只有 ${near?.n_events} 個地震，回測結果本身不穩，只能當參考。`
+    : "這組條件超出回測涵蓋的範圍（規模太小、太大，或時間超出範圍），數字是模型外推的，只能當量級參考。";
 
   return `
   <div class="info">

@@ -204,6 +204,8 @@ main.with-tabbar { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 .tbl tr.bad td, .tbl td.bad { color: var(--warn); font-weight: 600; }
 .mtx th, .mtx td { text-align: center; padding: 6px 2px; }
 .mtx tbody th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); }
+.mtx td small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); line-height: 1.2; }
+.mtx td small.thin { color: var(--lv3); font-weight: 700; }
 .mt-title { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
 .formula { font-size: 12px; background: var(--surface-2); padding: 10px; border-radius: 10px; overflow-x: auto; white-space: pre; }
 .card-list { display: flex; flex-direction: column; gap: 10px; }
@@ -224,13 +226,13 @@ main.with-tabbar { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 .tabbar a.on { color: var(--accent); font-weight: 600; }
 .leaflet-popup-content { font-size: 13px; line-height: 1.5; }
 
-/* 已驗證／外推估計：刻意做得不顯眼（提醒都集中在 ⓘ 頁） */
+/* 回測涵蓋／樣本有限／外推估計：刻意做得不顯眼（提醒都集中在 ⓘ 頁） */
 .vtag {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 10px; padding: 3px 10px; border-radius: 999px;
   font-size: 12px; border: 1px solid var(--line); color: var(--muted); background: var(--surface-2);
 }
 .vtag i { font-style: normal; opacity: .7; }
-.vtag.ext { border-style: dashed; color: var(--text); }
+.vtag.ext, .vtag.thin { border-style: dashed; color: var(--text); }
 h2 .vtag { margin: 0 0 0 6px; vertical-align: 2px; font-weight: 400; }
 .status.nocover { --c: var(--muted); }
 .status.nocover .ring { background: conic-gradient(color-mix(in srgb, var(--c) 25%, transparent) 0 100%); }
@@ -426,7 +428,7 @@ html.modal-open, html.map-full { overflow: hidden; }
 .cond-preview .cp-q { display: block; color: var(--muted); }
 .cond-preview .cp-a b.lv1 { color: var(--lv1); } .cond-preview .cp-a b.lv2 { color: var(--lv2); } .cond-preview .cp-a b.lv3 { color: var(--lv3); }
 .cp-tag { font-style: normal; font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 4px; color: var(--muted); white-space: nowrap; }
-.cp-tag.ext { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.cp-tag.ext, .cp-tag.thin { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
 
 /* 我的情境（選位置面板最上面） */
 .favs { margin: 2px 0 14px; }

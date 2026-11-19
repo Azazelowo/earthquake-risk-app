@@ -100,9 +100,10 @@ describe("調整條件面板的滑桿（Phase 4）", () => {
     expect(html).toContain('id="cond-preview"');
   });
 
-  it("預覽：網格內給數字與已驗證／外推標籤；M6.5 以上是外推估計", () => {
+  it("預覽：網格內給數字與回測標籤；M6.5 以上是外推估計", () => {
     const s = state(makeMockFeed(ISSUED));
-    expect(condPreview(s, { radiusKm: 50, T: 3, m: 5 })).toContain("已驗證範圍");
+    expect(condPreview(s, { radiusKm: 50, T: 3, m: 5 })).toContain("回測涵蓋範圍");
+    expect(condPreview(s, { radiusKm: 50, T: 1 / 24, m: 6 })).toContain("回測樣本有限");
     const ext = condPreview(s, { radiusKm: 50, T: 2.5, m: 6.8 });
     expect(ext).toContain("外推估計");
     expect(ext).toContain("2.5 天內・M6.8 以上");
