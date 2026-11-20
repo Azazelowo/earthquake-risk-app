@@ -3,7 +3,7 @@
 // 資料由破專題 app/export_history.py 產生，放在 public/history/（和網站一起發布，點開才下載，不預存）：
 // - index.json：地震與時間點清單。
 // - <時間點 id>.json：和 feed.json 同格式（用 validateFeed 檢查），所以畫面上的所有計算照常可用。
-// 怎麼算的：v1.1 參數（1995–2014 擬合）＋事後整理好的正式目錄，只用每個時間點之前的資料
+// 怎麼算的：v1.2 參數（1995–2014 擬合）＋事後整理好的正式目錄，只用每個時間點之前的資料
 // （校準倍率也是）。當時即時能拿到的資料比較不完整，所以「當時真的跑」的數字會不一樣——畫面上要寫。
 import type { Feed } from "./schema";
 import { validateFeed } from "./feed";

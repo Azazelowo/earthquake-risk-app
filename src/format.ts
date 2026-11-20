@@ -10,15 +10,17 @@ export interface Level {
 export const LEVEL_EDGES = [1.5, 3, 10];
 
 /**
- * 門檻的回測檢查（2026-11-18；破專題 app/state_frequency.py → docs/reports/state_frequency.md）：
+ * 門檻的回測檢查（破專題 app/state_frequency.py → docs/reports/state_frequency.md）：
  * 測試期 2015-01-01～2026-09-30 每天、20 個縣市代表點、首頁預設條件（50 km・3 天・M5 以上），
  * 各狀態出現的比例。share：所有縣市×天；topCounty：全台排行第一名那一天的狀態。
- * 「高不少」以上約占 2.9%（平均一個月一次左右），符合「不要天天出現」的目標，所以維持上面的門檻。
+ * 2026-11-21 重算（v1.2）：11-18 的版本（「高不少」以上 2.9%）把「平常」算低了約 2.6 倍（state_frequency.py 的錯誤，
+ * 已修正），和 APP 實際的算法不一致；用 APP 的算法，「高不少」以上只占 0.8%（每縣市一年約 3 天）。
+ * 門檻是否要調整，等使用者決定；這裡先只更新數字。
  */
 export const LEVEL_BACKTEST = {
   days: 4291,
-  share: [0.8054, 0.1655, 0.0273, 0.0018],
-  topCounty: [0.1007, 0.6292, 0.2487, 0.0214],
+  share: [0.9174, 0.0743, 0.008, 0.0002],
+  topCounty: [0.3423, 0.5493, 0.1046, 0.0037],
 } as const;
 
 export function levelOf(ratio: number): Level {

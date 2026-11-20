@@ -18,11 +18,11 @@ function state(feed: Feed): State {
 }
 
 describe("餘震卡", () => {
-  it("有最近的較大地震時出現在首頁，寫明「偏低」與「不是地震預報」", () => {
+  it("有最近的較大地震時出現在首頁，寫明不確定性（高估／偏低）與「不是地震預報」", () => {
     const html = renderPublic(state(makeMockFeed(ISSUED)), { installHint: false });
     expect(html).toContain("最近的較大地震");
     expect(html).toContain("規模 5.8");
-    expect(html).toContain("偏低");
+    expect(html).toContain("高估");
     expect(html).toContain("不是地震預報");
     expect(html).toContain("M4 以上");
     expect(html).toContain("30 天內");
