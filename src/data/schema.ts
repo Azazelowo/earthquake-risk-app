@@ -8,7 +8,8 @@ export interface Feed {
   /** 發布時間（模型「現在」），ISO 8601 含時區 */
   issued_at: string;
   grid: { lat_min: number; lat_max: number; lon_min: number; lon_max: number; deg: number };
-  params: { b: number; m_ref: number };
+  /** kappa：機率換算的群聚係數（舊 feed 沒有這欄，載入時補 1＝卜瓦松） */
+  params: { b: number; m_ref: number; kappa: number };
   /** 10 個時間長度（天），遞增 */
   horizons_days: number[];
   /** 每格西南角 */

@@ -29,6 +29,14 @@ describe("validateFeed", () => {
     expect("extra" in v).toBe(false);
   });
 
+  it("舊 feed 沒有 params.kappa：補 1（卜瓦松）；有的話要在 1–20 之間", () => {
+    const f = real();
+    const old = { ...f, params: { b: f.params.b, m_ref: f.params.m_ref } };
+    expect(validateFeed(old).params.kappa).toBe(1);
+    expect(validateFeed({ ...f, params: { ...old.params, kappa: 1.6 } }).params.kappa).toBe(1.6);
+    expect(() => validateFeed({ ...f, params: { ...old.params, kappa: 0.5 } })).toThrow(FeedError);
+  });
+
   it("近期地震的來源只接受 GDMS、CWA、USGS（擋下塞進 HTML 的字串）", () => {
     const f = real();
     f.recent[0].source = '<img src=x onerror="alert(1)">' as never;

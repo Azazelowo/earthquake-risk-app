@@ -27,7 +27,11 @@ export function interpHorizon(mat: number[][], horizons: number[], T: number): n
 export const scaleMagnitude = (n: number, m: number, mRef: number, b: number) => n * 10 ** (-b * (m - mRef));
 
 /** 卜瓦松：至少發生一次 */
-export const probability = (n: number) => -Math.expm1(-n);
+/**
+ * 期望數 → 至少發生一次的機率。kappa＞1：地震成群發生（複合卜瓦松，每群平均 kappa 個），P = 1 − exp(−n/kappa)；
+ * kappa = 1 是一般卜瓦松。kappa 由破專題 app/probability_calibration.py 用訓練期真的發生的地震估，放在 feed.params。
+ */
+export const probability = (n: number, kappa = 1) => -Math.expm1(-n / kappa);
 
 export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const r = Math.PI / 180;
@@ -119,13 +123,13 @@ export function regionRef(feed: Feed, w: number[], T: number, which: Which): num
 }
 
 export function regionProbability(feed: Feed, w: number[], m: number, T: number, which: Which): number {
-  return probability(scaleMagnitude(regionRef(feed, w, T, which), m, feed.params.m_ref, feed.params.b));
+  return probability(scaleMagnitude(regionRef(feed, w, T, which), m, feed.params.m_ref, feed.params.b), feed.params.kappa);
 }
 
 /** 每格機率（地圖用） */
 export function cellProbabilities(feed: Feed, m: number, T: number, which: Which): number[] {
   return interpHorizon(matOf(feed, which), feed.horizons_days, T).map((n) =>
-    probability(scaleMagnitude(n, m, feed.params.m_ref, feed.params.b)),
+    probability(scaleMagnitude(n, m, feed.params.m_ref, feed.params.b), feed.params.kappa),
   );
 }
 
@@ -133,7 +137,7 @@ export function cellProbabilities(feed: Feed, m: number, T: number, which: Which
 export function magnitudeAtProbability(feed: Feed, w: number[], T: number, p: number, which: Which = "full") {
   const n = regionRef(feed, w, T, which);
   if (n <= 0) return NaN;
-  return feed.params.m_ref + Math.log10(n / -Math.log1p(-p)) / feed.params.b;
+  return feed.params.m_ref + Math.log10(n / (-Math.log1p(-p) * feed.params.kappa)) / feed.params.b;
 }
 
 export interface Assessment {

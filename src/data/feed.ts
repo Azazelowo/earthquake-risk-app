@@ -56,7 +56,11 @@ export function validateFeed(raw: unknown): Feed {
   };
   if (grid.lat_max <= grid.lat_min || grid.lon_max <= grid.lon_min) fail("grid 範圍不合理");
   const p = obj(f.params, "params");
-  const params = { b: num(p.b, "params.b", 0.3, 2), m_ref: num(p.m_ref, "params.m_ref", 0, 9) };
+  const params = {
+    b: num(p.b, "params.b", 0.3, 2),
+    m_ref: num(p.m_ref, "params.m_ref", 0, 9),
+    kappa: p.kappa === undefined ? 1 : num(p.kappa, "params.kappa", 1, 20),
+  };
   const horizons = arr(f.horizons_days, "horizons_days").map((v, i) => num(v, `horizons_days[${i}]`, 1e-6));
   if (horizons.length < 2 || horizons.some((h, i) => i > 0 && h <= horizons[i - 1])) fail("horizons_days 必須遞增");
   const c = obj(f.cells, "cells");

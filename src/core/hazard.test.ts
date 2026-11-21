@@ -5,7 +5,7 @@ import { makeMockFeed } from "../data/mock";
 import { levelOf } from "../format";
 import {
   allWeights, assess, assessCircle, assessPoint, cellIndexAt, cellProbabilities, circleAreaKm2, coverage, inGrid, interpHorizon,
-  isVerified, backtestTag, nearestBacktest, MIN_BACKTEST_EVENTS, pointWeights, probability, regionAreaKm2, scaleMagnitude, FULL_COVERAGE, MIN_COVERAGE,
+  isVerified, backtestTag, nearestBacktest, MIN_BACKTEST_EVENTS, magnitudeAtProbability, pointWeights, probability, regionAreaKm2, scaleMagnitude, FULL_COVERAGE, MIN_COVERAGE,
 } from "./hazard";
 
 const feed = makeMockFeed(new Date("2026-11-15T12:00:00Z"));
@@ -29,6 +29,23 @@ describe("基本公式", () => {
     expect(probability(0)).toBe(0);
     expect(probability(1e-9)).toBeCloseTo(1e-9, 15);
     expect(probability(50)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("群聚係數 kappa（複合卜瓦松）", () => {
+  it("kappa = 1 就是卜瓦松；kappa 越大，同樣的期望數換算出的機率越低", () => {
+    expect(probability(0.5, 1)).toBeCloseTo(probability(0.5), 12);
+    expect(probability(0.5, 2)).toBeCloseTo(1 - Math.exp(-0.25), 12);
+    expect(probability(0.5, 2)).toBeLessThan(probability(0.5));
+  });
+
+  it("feed 的 kappa 會套到區域機率，反查規模和它互為反函數", () => {
+    const w = pointWeights(feed, KAOHSIUNG.lat, KAOHSIUNG.lon, 50);
+    const k2 = { ...feed, params: { ...feed.params, kappa: 2 } };
+    const a1 = assess(feed, w, 5, 3), a2 = assess(k2, w, 5, 3);
+    expect(a2.p).toBeLessThan(a1.p);
+    const m = magnitudeAtProbability(k2, w, 3, a2.p);
+    expect(m).toBeCloseTo(5, 6);
   });
 });
 
