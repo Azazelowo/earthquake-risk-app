@@ -78,6 +78,33 @@ function sourcesSection(s: State): string {
 }
 
 /** notifyHtml：通知設定卡（src/ui/notify.ts）；由 main.ts 傳進來，這裡只負責放在頁面上 */
+/**
+ * 名詞解釋（2026-11-21 使用者要求）：一般人會遇到的詞，用一兩句白話說清楚。
+ * 規則：先講「它是什麼」，再講「最容易誤會的地方」；不用術語解釋術語。
+ */
+export const GLOSSARY: [string, string, string][] = [
+  ["prob", "機率（至少發生一次）", "在你選的範圍、時間內，至少發生一次「規模 M 以上」地震的機率。不是「會不會搖到你」，也不是「哪一天會發生」。"],
+  ["usual", "平常的機率", "只用長期紀錄算的機率，是過去多年的平均，包含過去大地震後的餘震期。所以平靜的時候，「現在」比「平常」低很常見。"],
+  ["ratio", "倍數", "現在的機率 ÷ 平常的機率。顏色和狀態只看倍數：小於 1.5 倍是「差不多以下」（明顯低於時標題會寫「低於平常」），1.5–3 倍「高一些」，3–10 倍「高不少」，10 倍以上「遠高於」。"],
+  ["mag", "規模（M）和震度不一樣", "規模是地震本身的大小（同一個地震只有一個規模）；震度是某個地點搖得多厲害（每個地方不同）。這個 APP 算的是規模，不是震度——很深或很遠的地震，規模大你這裡也可能搖得不多。"],
+  ["range", "範圍與時間", "範圍是以你的位置為圓心的半徑；時間是從現在起多久之內。範圍越大、時間越長，機率越高，但倍數不一定。"],
+  ["after", "餘震", "大地震之後在附近接著發生的地震，剛開始很多、之後慢慢變少。模型會依最近發生的地震提高附近的機率，但它不知道哪一次會是更大的地震。"],
+  ["data", "正式目錄與暫時資料", "正式目錄是氣象署整理好的完整地震清單，大約落後一個半月；之後的空窗用有感地震報告和美國地質調查所的資料暫時補上，小地震會不完整。"],
+  ["grid", "網格", "模型把台灣附近切成約 22 公里見方的格子算機率。地圖上的平滑只是讓畫面好看，沒有讓模型更精細。"],
+  ["kappa", "群聚係數 κ", "地震常常成群發生，同一段時間裡的幾個地震其實是「一次事件」。換算機率時考慮這一點（目前 κ ≈ KAPPA），否則機率會高估。"],
+  ["back", "回測、回測涵蓋範圍、外推估計", "回測是用 1995–2014 年的資料定參數，再拿 2015 年之後的地震檢查準不準。條件落在檢查過的範圍叫「回測涵蓋範圍」；檢查的地震太少叫「回測樣本有限」；超出範圍叫「外推估計」，只能當量級參考。"],
+  ["auc", "AUC 與預測÷實際（專家版）", "AUC 看模型能不能分辨「哪裡比較可能發生」（0.5＝亂猜、1＝完美），不代表機率數字準；機率準不準看「預測÷實際」（1 最好）。"],
+  ["hist", "歷史回放", "用事後整理好的資料，重算過去大地震前後模型會說什麼。不是當時真的發布的數字。"],
+];
+
+export function glossaryCard(f: { params: { kappa: number } }): string {
+  return `
+    <section class="card" id="glossary">
+      <h2>名詞解釋</h2>
+      <dl class="gloss">${GLOSSARY.map(([id, t, d]) => `<dt id="g-${id}">${t}</dt><dd>${d.replace("KAPPA", f.params.kappa.toFixed(2))}</dd>`).join("")}</dl>
+    </section>`;
+}
+
 export function renderInfo(s: State, backHref: string, notifyHtml = ""): string {
   const f = s.feed, c = s.cond;
   const a = assessPoint(f, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
@@ -111,6 +138,8 @@ export function renderInfo(s: State, backHref: string, notifyHtml = ""): string 
       <ul class="notes plain">${disclaimerPoints(f.mock).map((p) => `<li>${p}</li>`).join("")}</ul>
       <button class="btn" data-act="show-disclaimer">再看一次開啟時的說明視窗</button>
     </section>
+
+    ${glossaryCard(f)}
 
     <section class="card">
       <h2>資料狀態</h2>

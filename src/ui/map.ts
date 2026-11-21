@@ -20,6 +20,11 @@ export interface MapHooks {
 const P_STOPS = ["#e8f0f7", "#b9d3e8", "#7fb0d6", "#4d86bf", "#3a5da6", "#3b3a8f", "#2b1d6b"];
 const P_LOG_MIN = -5, P_LOG_SPAN = 4.5; // 10⁻⁵（0.001%）到 10⁻⁰·⁵（約 32%）
 const pStop = (logP: number) => Math.floor(Math.min(Math.max((logP - P_LOG_MIN) / P_LOG_SPAN, 0), 0.999) * P_STOPS.length);
+/** 第 k 個顏色的下緣機率（百分比文字），圖例用 */
+const pctEdge = (k: number) => {
+  const v = 10 ** (P_LOG_MIN + (P_LOG_SPAN * k) / P_STOPS.length) * 100;
+  return `${v < 0.01 ? v.toFixed(3) : v < 1 ? v.toFixed(2) : v.toFixed(0)}%`;
+};
 const LV_COLORS = ["#8a96a3", "#e2b93b", "#e8822e", "#d1453b"];
 const lvStop = (logRatio: number) => {
   const r = 10 ** logRatio;
@@ -200,8 +205,12 @@ export function focusCircle(lat: number, lon: number, radiusKm: number) {
 function drawLegend(s: State) {
   const lg = document.getElementById("legend");
   if (!lg) return;
+  // 圖例要說清楚「顏色代表什麼、單位是什麼」（2026-11-21 人因檢查）
   lg.innerHTML =
     s.mapLayer === "p"
-      ? `<span>0.001%</span>${P_STOPS.map((c) => `<i style="background:${c}"></i>`).join("")}<span>&gt;10%</span>`
-      : LV_COLORS.map((c, i) => `<i style="background:${c}"></i><span>${["≈平常", "高一些", "高不少", "遠高於"][i]}</span>`).join("");
+      ? `<b>每格的機率</b><span>&lt;${pctEdge(1)}</span>${P_STOPS.map((c) => `<i style="background:${c}"></i>`).join("")}<span>&gt;${pctEdge(P_STOPS.length - 1)}</span>` +
+        `<small class="lg-note">一格約 22 km；顏色用對數刻度，每深一級約多 ${(10 ** (P_LOG_SPAN / P_STOPS.length)).toFixed(1)} 倍</small>`
+      : `<b>和平常比</b>` +
+        LV_COLORS.map((c, i) => `<i style="background:${c}"></i><span>${["< 1.5 倍", "1.5–3", "3–10", "≥ 10 倍"][i]}</span>`).join("") +
+        `<small class="lg-note">${["差不多以下", "高一些", "高不少", "遠高於"].map((t, i) => `${["< 1.5", "1.5–3", "3–10", "≥ 10"][i]}：${t}`).join("・")}</small>`;
 }

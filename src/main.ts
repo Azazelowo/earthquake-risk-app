@@ -459,7 +459,14 @@ app.addEventListener("click", (ev) => {
   else if (d.act === "nt-add") return addNotifyRule();
   else if (d.ntToggle || d.ntDel) return changeNotifyRule(d.ntToggle ?? d.ntDel!, d.ntToggle ? "toggle" : "delete");
   else if (d.act === "dismiss-install") (installHint = false), flag.set(INSTALL_HINT_KEY, "off");
-  else if (d.act === "need-carto") {
+  else if (d.act === "glossary") {
+    // 名詞解釋在 ⓘ 頁；已經在 ⓘ 頁時 hash 不會變，直接捲過去
+    sheet = "";
+    if (location.hash === "#/info") return void document.getElementById("glossary")?.scrollIntoView({ block: "start" });
+    pendingScroll = "glossary";
+    location.hash = "#/info";
+    return;
+  } else if (d.act === "need-carto") {
     // CARTO 底圖還沒有金鑰：帶去 ⓘ 頁的設定區
     sheet = "";
     pendingScroll = "carto";

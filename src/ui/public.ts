@@ -179,6 +179,7 @@ export function renderShareSheet(s: State, base: string, includeLocation: boolea
   <div class="share-what"><span>條件</span><b>${esc(condText(s.cond))}</b></div>
   <label class="share-loc"><input type="checkbox" data-share-loc ${includeLocation ? "checked" : ""}><span>附上位置：${esc(shareLocationText(p))}</span></label>
   ${personal ? `<p class="share-warn">這是用 GPS 定位的位置，所以預設不附。連結會留在聊天紀錄裡，附上的話對方會知道你大概在哪裡（約 1 公里）。</p>` : ""}
+  <p class="share-incl"><b>這個連結會包含：</b>條件${includeLocation ? `＋位置（${esc(shareLocationText(p))}）` : "（不含位置）"}</p>
   <input id="share-link" class="share-link" type="text" readonly value="${esc(url)}" aria-label="分享連結">
   <div class="share-btns">
     ${canShare ? `<button type="button" class="btn primary" data-act="share-go">分享…</button>` : ""}
@@ -195,6 +196,36 @@ function sharedNote(kind: "" | "place" | "cond"): string {
     : "已套用分享連結的條件，位置還是你自己的。";
   return `<div class="shared-note" role="status"><span>${text}</span>
     <button type="button" class="x" data-act="dismiss-shared" aria-label="知道了">✕</button></div>`;
+}
+
+/**
+ * 狀態的圖例：四個等級和門檻排成一列，目前的等級標出來（2026-11-21 人因檢查：只看到一個狀態，不知道它在量表的哪裡）。
+ * 顏色之外一定有文字（色弱也看得懂）。
+ */
+export function levelScale(ratio: number): string {
+  const cur = levelOf(ratio).key;
+  const items: [string, string, string][] = [
+    ["lv0", "差不多以下", `< ${LEVEL_EDGES[0]} 倍`],
+    ["lv1", "高一些", `${LEVEL_EDGES[0]}–${LEVEL_EDGES[1]} 倍`],
+    ["lv2", "高不少", `${LEVEL_EDGES[1]}–${LEVEL_EDGES[2]} 倍`],
+    ["lv3", "遠高於", `≥ ${LEVEL_EDGES[2]} 倍`],
+  ];
+  const now = items.find(([k]) => k === cur)?.[1] ?? "";
+  return `<div class="lvscale" role="img" aria-label="狀態分級：${items.map(([, t, r]) => `${t} ${r}`).join("、")}；目前是「${now}」">${items
+    .map(([k, t, r]) => `<span class="${k}${k === cur ? " on" : ""}"><b>${t}</b><small>${r}</small></span>`)
+    .join("")}</div>`;
+}
+
+/**
+ * 「資料時間」和「更新時間」不一樣（2026-11-21 使用回饋）：每 15 分鐘更新的是暫時資料，正式目錄約落後一個半月。
+ * 用一行淡色字放在更新時間下面，不做成醒目警示（2026-11-15 的決定）。
+ */
+export function dataAgeLine(f: State["feed"]): string {
+  const ds = f.data_status;
+  if (!ds?.catalog_end) return "";
+  const end = new Date(ds.catalog_end).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric" });
+  const gap = Math.round(ds.gap_days ?? 0);
+  return `<span class="fresh-data">資料：正式地震目錄到 ${end}${gap >= 2 ? `，之後 ${gap} 天是暫時資料（小地震不完整）` : ""}</span>`;
 }
 
 export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" | "place" | "cond" }): string {
@@ -218,6 +249,7 @@ export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" 
       <div><b>${pct(a.pBg)}</b><span>${odds(a.pBg)}</span><label>平常的機率</label></div>
     </div>
     <p class="abs-cap">${esc(condText(c))}，至少發生一次的機率</p>
+    ${levelScale(a.ratio)}
     ${((t) => `<a class="vtag ${t}" href="#/info">${BACKTEST_TAG_LABEL[t]}<i>ⓘ</i></a>`)(backtestTag(f, c.m, c.T))}
   </section>`
     : `
@@ -242,7 +274,7 @@ export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" 
   <p class="fresh">
     ${s.history
       ? `<span class="dot hist"></span>回放的時間點：${twFull(f.issued_at)}・<a href="#/history">換時間點</a>`
-      : `<span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>・<button type="button" class="linkbtn" data-act="share">分享</button>`}
+      : `<span class="dot"></span>${twTime(f.issued_at)} 更新（${ago(f.issued_at)}）・<a href="#/info">資料說明${nNotes ? `（${nNotes} 則提醒）` : ""}</a>・<button type="button" class="linkbtn" data-act="share">分享</button>${dataAgeLine(f)}`}
   </p>
   ${aftershockCard(f, s.history ? Date.parse(f.issued_at) : undefined)}
   ${rankCard(f)}
@@ -253,6 +285,8 @@ export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" 
       <p><b>不是地震預報。</b>這是統計模型算出的「機率」：根據這裡長期多常有地震，加上最近有沒有地震（大地震後常有餘震），估計在你選的範圍與時間內，<b>至少發生一次</b>這種規模地震的機率。</p>
       <p><b>為什麼看「倍數」？</b>單看一個百分比很難判斷高低。「平常」是只用長期紀錄算的機率；倍數＝現在÷平常。顏色只看倍數。</p>
       <p><b>「和平常差不多」不代表不會有地震。</b>台灣每年有上千次有感地震，平時就要做好防震準備。</p>
+      <p><b>規模不是震度。</b>這裡算的是「發生規模 M 以上的地震」，不是「你這裡會搖多大」。很深或很遠的地震，就算規模大，你感覺到的震度也可能很小。</p>
+      <button type="button" class="link linkbtn" data-act="glossary">名詞解釋（機率、平常、倍數、規模…）→</button><br>
       <a class="link" href="#/info">資料限制與完整說明 →</a>
     </div>
   </details>

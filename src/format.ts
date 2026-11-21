@@ -38,6 +38,12 @@ export const LEVEL_BACKTEST = {
 export function levelOf(ratio: number): Level {
   // 倍數算不出來（範圍內沒有模型格子）時不能落到最高等級；呼叫端應該先檢查 covered，這裡是最後一道保險
   if (!isFinite(ratio)) return { key: "lv0", title: "無法比較", hint: "這個範圍沒有可用的模型資料。" };
+  // 門檻不變（< 1.5 都是 lv0、同一個顏色）；只是明顯低於平常（< 1/1.5）時標題說實話，並說明那不代表比較安全
+  if (ratio < 1 / LEVEL_EDGES[0])
+    return {
+      key: "lv0", title: "低於平常",
+      hint: "「平常」是長期平均，包含過去大地震後的餘震期，平靜時期比它低很常見。這不代表比較安全，防震準備照常。",
+    };
   if (ratio < LEVEL_EDGES[0])
     return { key: "lv0", title: "和平常差不多", hint: "台灣本來就常有地震，平時的防震準備照常就好。" };
   if (ratio < LEVEL_EDGES[1])
@@ -67,6 +73,8 @@ export function odds(p: number): string {
 
 export function ratioText(r: number): string {
   if (!isFinite(r)) return "—";
+  // 小於 1 也寫實際的倍數（2026-11-21 使用回饋：0.43 寫成「約 1 倍」會被讀成「跟平常一樣」）；格式和通知的 ratioLabel 相同
+  if (r < 0.95) return `約 ${r < 0.1 ? r.toFixed(2) : r.toFixed(1)} 倍`;
   if (r < 1.15) return "約 1 倍";
   return r < 10 ? `約 ${r.toFixed(1)} 倍` : `約 ${Math.round(r)} 倍`;
 }
