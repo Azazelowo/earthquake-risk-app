@@ -1,5 +1,5 @@
 // 大眾版首頁：一個狀態（和平常比的倍數決定顏色）＋絕對機率＋可展開的說明。
-// 提醒與資料限制集中在 ⓘ 頁（info.ts）；這裡只留「已驗證／外推估計」的小標籤。
+// 提醒與資料限制集中在 ⓘ 頁（info.ts）；這裡只留「回測涵蓋／樣本有限／外推估計」的小標籤。
 import type { State, Cond } from "../state";
 import type { Feed } from "../data/schema";
 import { RADII, TIMES, MAGS, COUNTIES, timeLabel, placeShort } from "../state";
@@ -7,7 +7,7 @@ import type { CondSlider } from "../state";
 import { condSliders } from "./sliders";
 import { FAV_MAX, FAV_NAME_MAX, type Fav } from "../favs";
 import { buildShareUrl, shareLocationByDefault, shareLocationText } from "../share";
-import { assess, assessPoint, allWeights, isVerified } from "../core/hazard";
+import { assess, assessPoint, allWeights, backtestTag, BACKTEST_TAG_LABEL } from "../core/hazard";
 import { pickMainshock, MAINSHOCK_RULES } from "../core/aftershock";
 import { outlookSection } from "./outlook";
 import { rankPlaces, scanPlace, MIN_P, RANK_RADIUS_KM, type ScanHit } from "../core/scan";
@@ -218,7 +218,7 @@ export function renderPublic(s: State, opt: { installHint: boolean; shared?: "" 
       <div><b>${pct(a.pBg)}</b><span>${odds(a.pBg)}</span><label>平常的機率</label></div>
     </div>
     <p class="abs-cap">${esc(condText(c))}，至少發生一次的機率</p>
-    <a class="vtag ${isVerified(f, c.m, c.T) ? "ok" : "ext"}" href="#/info">${isVerified(f, c.m, c.T) ? "已驗證範圍" : "外推估計"}<i>ⓘ</i></a>
+    ${((t) => `<a class="vtag ${t}" href="#/info">${BACKTEST_TAG_LABEL[t]}<i>ⓘ</i></a>`)(backtestTag(f, c.m, c.T))}
   </section>`
     : `
   <section class="status nocover">
@@ -346,9 +346,9 @@ export function condPreview(s: State, c: Cond): string {
   const a = assessPoint(s.feed, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
   const head = `<span class="cp-q">${esc(placeShort(s.place))}${esc(condText(c))}</span>`;
   if (!a.covered) return `${head}<span class="cp-a"><b>目前模型未涵蓋此區域</b></span>`;
-  const v = isVerified(s.feed, c.m, c.T);
+  const t = backtestTag(s.feed, c.m, c.T);
   return `${head}<span class="cp-a">現在 <b>${pct(a.p)}</b>・平常 ${pct(a.pBg)}・<b class="${levelOf(a.ratio).key}">${ratioText(a.ratio)}</b>
-    <i class="cp-tag ${v ? "ok" : "ext"}">${v ? "已驗證範圍" : "外推估計"}</i></span>`;
+    <i class="cp-tag ${t}">${BACKTEST_TAG_LABEL[t]}</i></span>`;
 }
 
 export function renderCondSheet(s: State): string {
