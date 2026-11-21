@@ -211,7 +211,7 @@ function viewTime(s: State) {
   <h3 class="vh">固定地點＋規模，看時間</h3>
   ${chart}
   <div class="keys"><span class="k now">現在</span><span class="k bg">平常</span></div>
-  <p class="muted small">「現在」的曲線在短時間內比平常高、時間拉長後倍數變小：近期活動（餘震）會隨時間衰減，長期就回到背景。</p>
+  <p class="muted small">${timeTrendText(P(1 / 24, "full") / P(1 / 24, "bg"), P(30, "full") / P(30, "bg"))}</p>
   <table class="tbl"><thead><tr><th>時間</th><th>現在</th><th>平常</th><th>倍數</th></tr></thead><tbody>
   ${TIMES.map(([T, l]) => {
     const a = P(T, "full"), b = P(T, "bg");
@@ -219,6 +219,18 @@ function viewTime(s: State) {
   }).join("")}
   </tbody></table>
   ${notesBox(s)}`;
+}
+
+/**
+ * 時間頁的說明句依「目前的數字」寫（2026-11-21 使用回饋：固定寫「短時間比平常高」，但當時臺北每一格都低於平常）。
+ */
+export function timeTrendText(rShort: number, rLong: number): string {
+  if (!isFinite(rShort) || !isFinite(rLong)) return "";
+  if (rShort >= 1.5 && rShort > rLong * 1.2)
+    return "目前「現在」在短時間內比平常高、時間拉長後倍數變小：近期活動（餘震）會隨時間衰減，長期就回到背景。";
+  if (rShort < 1 && rLong < 1)
+    return "目前這裡「現在」不管多長的時間都低於「平常」：最近附近沒有特別的地震活動。「平常」是包含過去餘震期的長期平均，所以平靜時比它低是正常的，不代表比較安全。附近一旦有地震，短時間的倍數會先升高，之後再慢慢回到背景。";
+  return "目前「現在」和「平常」差不多。附近一旦有地震，短時間的倍數會先升高，之後再慢慢回到背景。";
 }
 
 /** 規模（列）×時間（欄）的小矩陣，比 20 列長表適合手機 */
