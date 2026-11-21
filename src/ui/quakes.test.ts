@@ -66,7 +66,7 @@ describe("點開一筆地震的面板", () => {
     const html = renderQuakeSheet(state([]), quake({}));
     expect(html).toContain("規模 4.6 的地震");
     expect(html).toContain("M4 以上");
-    expect(html).toContain("偏低");
+    expect(html).toContain("高估");
     expect(html).toContain("不是地震預報");
   });
 

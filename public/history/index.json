@@ -1,6 +1,6 @@
 {
  "version": 1,
- "model_version": "v1.1",
+ "model_version": "v1.2",
  "train": [
   "1995-01-01",
   "2015-01-01"

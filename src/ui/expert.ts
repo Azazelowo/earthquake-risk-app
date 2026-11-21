@@ -269,7 +269,7 @@ P(範圍)     = 1 − exp(−N(範圍))                卜瓦松：至少一次<
   <details class="fold"><summary>狀態門檻怎麼定（回測檢查過）</summary><div class="fold-body">
     <p>倍數 &lt; ${LEVEL_EDGES[0]}：和平常差不多；${LEVEL_EDGES[0]}–${LEVEL_EDGES[1]}：高一些；${LEVEL_EDGES[1]}–${LEVEL_EDGES[2]}：高不少；≥ ${LEVEL_EDGES[2]}：遠高於平常。</p>
     <p>目前這份資料（3 天）全區 ${full.length} 格的分布：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${counts[i]}`).join("、")}。</p>
-    <p><b>回測檢查</b>：2015–2026 測試期 ${LEVEL_BACKTEST.days.toLocaleString("zh-TW")} 天、20 個縣市、首頁預設條件（50 km・3 天・M5 以上），各狀態出現的比例：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${(LEVEL_BACKTEST.share[i] * 100).toFixed(1)}%`).join("、")}。「高不少」以上平均大約一個月一次，符合「不要天天出現」的目標，所以維持這組門檻。全台排行的第一名有 ${Math.round((1 - LEVEL_BACKTEST.topCounty[0]) * 100)}% 的天數至少「高一些」。</p>
+    <p><b>回測檢查</b>：2015–2026 測試期 ${LEVEL_BACKTEST.days.toLocaleString("zh-TW")} 天、20 個縣市、首頁預設條件（50 km・3 天・M5 以上），各狀態出現的比例：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${(LEVEL_BACKTEST.share[i] * 100).toFixed(1)}%`).join("、")}。「高不少」以上平均每個縣市一年約 ${Math.round((LEVEL_BACKTEST.share[2] + LEVEL_BACKTEST.share[3]) * 365)} 天。全台排行的第一名有 ${Math.round((1 - LEVEL_BACKTEST.topCounty[0]) * 100)}% 的天數至少「高一些」。</p>
   </div></details>
   <details class="fold"><summary>資料狀態</summary><div class="fold-body">
     <p>正式目錄到 ${twTime(f.data_status.catalog_end)}；之後 ${esc(String(f.data_status.gap_days))} 天用 ${esc(f.data_status.sources.join("、"))} 暫時補了 ${esc(String(f.data_status.n_provisional))} 筆。</p>
