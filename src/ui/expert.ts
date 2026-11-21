@@ -163,7 +163,7 @@ function viewMag(s: State) {
   const nF = regionRef(f, w, s.cond.T, "full"), nB = regionRef(f, w, s.cond.T, "bg");
   const mags: number[] = [];
   for (let m = 3; m <= 7.5 + 1e-9; m += 0.1) mags.push(+m.toFixed(1));
-  const P = (n: number, m: number) => probability(scaleMagnitude(n, m, f.params.m_ref, f.params.b));
+  const P = (n: number, m: number) => probability(scaleMagnitude(n, m, f.params.m_ref, f.params.b), f.params.kappa);
   const chart = lineChart(
     [
       { name: "平常", cls: "bg", pts: mags.map((m) => [m, P(nB, m)]) },
@@ -197,7 +197,7 @@ function viewTime(s: State) {
   const Ts: number[] = [];
   for (let e = Math.log10(1 / 24); e <= Math.log10(30) + 1e-9; e += 0.05) Ts.push(10 ** e);
   const P = (T: number, which: "full" | "bg") =>
-    probability(scaleMagnitude(regionRef(f, w, Math.min(Math.max(T, f.horizons_days[0]), 30), which), s.cond.m, f.params.m_ref, f.params.b));
+    probability(scaleMagnitude(regionRef(f, w, Math.min(Math.max(T, f.horizons_days[0]), 30), which), s.cond.m, f.params.m_ref, f.params.b), f.params.kappa);
   const chart = lineChart(
     [
       { name: "平常", cls: "bg", pts: Ts.map((T) => [T, P(T, "bg")]) },
@@ -271,7 +271,7 @@ P(範圍)     = 1 − exp(−N(範圍))                卜瓦松：至少一次<
     <p>目前這份資料（3 天）全區 ${full.length} 格的分布：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${counts[i]}`).join("、")}。</p>
     <p><b>回測檢查</b>：2015–2026 測試期 ${LEVEL_BACKTEST.days.toLocaleString("zh-TW")} 天、20 個縣市、首頁預設條件（50 km・3 天・M5 以上），各狀態出現的比例：${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${(LEVEL_BACKTEST.share[i] * 100).toFixed(1)}%`).join("、")}。「高不少」以上平均每個縣市一年約 ${Math.round((LEVEL_BACKTEST.share[2] + LEVEL_BACKTEST.share[3]) * 365)} 天。全台排行的第一名有 ${Math.round((1 - LEVEL_BACKTEST.topCounty[0]) * 100)}% 的天數至少「高一些」。</p>
     <p><b>拿真的發生的地震檢查</b>：各狀態之後 3 天內、50 km 內真的發生 M5 以上的比例是 ${["差不多", "高一些", "高不少", "遠高於"].map((t, i) => `${t} ${(LEVEL_BACKTEST.hitRate[i] * 100).toFixed(1)}%`).join("、")}；換成「實際倍數」（÷ 平常的機率）是 ${LEVEL_BACKTEST.realized.map((v, i) => `${v.toFixed(1)}（${LEVEL_BACKTEST.realizedCI[i][0].toFixed(1)}–${LEVEL_BACKTEST.realizedCI[i][1].toFixed(1)}）`).join("、")}。四個狀態都落在（或碰到）自己的範圍、而且依序上升，所以門檻維持不變。「遠高於」只有 ${LEVEL_BACKTEST.n[3]} 個縣市×天，只能參考。</p>
-    <p>同一個檢查也發現：<b>機率的絕對值偏高約 1.4–1.9 倍</b>（全部縣市×天：模型平均 1.6%、平常 1.8%，真的發生 1.0%）。原因是地震成群發生——有地震的 3 天裡平均有 1.5 個 M5——用卜瓦松公式換算「至少一次」會高估。倍數受的影響小得多（現在和平常一起偏高），但看機率數字時要知道這一點。</p>
+    <p>同一個檢查也發現機率的絕對值原本偏高約 1.4–1.9 倍：地震成群發生（有地震的 3 天裡平均有 1.5 個 M5），用卜瓦松公式換算「至少一次」會高估。<b>現在改用 P = 1 − exp(−N/κ)</b>（複合卜瓦松，κ = ${f.params.kappa.toFixed(2)}，只用 1995–2014 年真的發生的地震估），2015 年後檢驗：平均機率 11.4% → 8.1%（實際 8.3%），36 組條件中 35 組變準。仍有的偏差：M6 偏高約 1.1–1.3 倍；1 天、小範圍偏低約 0.7–0.8 倍。</p>
   </div></details>
   <details class="fold"><summary>資料狀態</summary><div class="fold-body">
     <p>正式目錄到 ${twTime(f.data_status.catalog_end)}；之後 ${esc(String(f.data_status.gap_days))} 天用 ${esc(f.data_status.sources.join("、"))} 暫時補了 ${esc(String(f.data_status.n_provisional))} 筆。</p>

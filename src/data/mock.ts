@@ -77,7 +77,7 @@ export function makeMockFeed(now = new Date()): Feed {
 
   const iso = new Date(Math.floor(t0 / 36e5) * 36e5).toISOString();
   return {
-    version: 1, mock: true, issued_at: iso, grid: g, params: { b: 0.77, m_ref: 3.5 },
+    version: 1, mock: true, issued_at: iso, grid: g, params: { b: 0.77, m_ref: 3.5, kappa: 1 },
     horizons_days: HORIZONS, cells: { lat, lon }, n_full, n_bg, recent, backtest,
     data_status: {
       catalog_end: new Date(t0 - 47 * 864e5).toISOString(), gap_days: 47, n_provisional: 63,
