@@ -77,7 +77,8 @@ function sourcesSection(s: State): string {
   <p><b>本 APP 原始碼</b>：<a href="${REPO_URL}" target="_blank" rel="noopener">earthquake-risk-app</a></p>`;
 }
 
-export function renderInfo(s: State, backHref: string): string {
+/** notifyHtml：通知設定卡（src/ui/notify.ts）；由 main.ts 傳進來，這裡只負責放在頁面上 */
+export function renderInfo(s: State, backHref: string, notifyHtml = ""): string {
   const f = s.feed, c = s.cond;
   const a = assessPoint(f, s.place.lat, s.place.lon, c.radiusKm, c.m, c.T);
   const bt = backtestTag(f, c.m, c.T);
@@ -128,6 +129,7 @@ export function renderInfo(s: State, backHref: string): string {
       <ul class="notes plain">
         <li><b>定位只在這支手機上計算。</b>「你在哪個鄉鎮區」是用 APP 內建的界線檔在手機上判斷，不會查詢任何伺服器。</li>
         <li><b>存在手機裡的位置會降低精度</b>（約 1 公里），而且只存在這支手機，清除瀏覽器資料就會消失。</li>
+        <li><b>通知規則也只存在這支手機</b>，規則掛在「我的情境」上，不會上傳；通知是由這個 APP 在手機上評估後直接送出，沒有經過任何伺服器。</li>
         <li><b>「我的情境」也只存在這支手機</b>，不會上傳；裡面的位置同樣降低精度，用 GPS 定位存的會變成固定的點，下次開 APP 不會被自動定位換掉。</li>
         <li><b>分享連結</b>：選縣市的位置只放縣市名稱、地圖上點的位置放約 1 公里精度的座標；<b>用 GPS 定位的位置預設不附</b>，要自己勾選。APP 不會自己把連結傳出去，要傳給誰由你決定。收到的連結只會套用範圍內的數字，連結裡的文字不會出現在畫面上。</li>
         <li><b>鄉鎮區界線有簡化</b>，和原始界線最多差 ${TOWN_TOLERANCE_M} 公尺。離交界太近、或定位誤差太大時，只會顯示「XX區附近」。</li>
@@ -140,6 +142,8 @@ export function renderInfo(s: State, backHref: string): string {
       <h2>安裝與更新</h2>
       ${installSection()}
     </section>
+
+    ${notifyHtml}
 
     <section class="card" id="carto">
       <h2>底圖設定：CARTO 金鑰</h2>

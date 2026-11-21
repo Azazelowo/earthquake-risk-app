@@ -16,6 +16,8 @@
 
 模型與資料管線在 [earthquake-risk-project](https://github.com/Azazelowo/earthquake-risk-project)（`app/hazard_core.py`、`app/live_update.py`）。設計與各項決定的理由見 [docs/DESIGN.md](docs/DESIGN.md)。
 
+**通知**：ⓘ 頁可以設定「我的情境」的門檻通知（狀態升到某個倍數、機率達到某個值、附近有新的地震報告）。不需要伺服器，APP 開著且資料更新時才會評估；**不是地震預警**。行為、平台限制與伺服器推播的設計見 [docs/NOTIFY.md](docs/NOTIFY.md)。
+
 ## 資料狀態（要先知道的）
 
 | 項目 | 內容 |
