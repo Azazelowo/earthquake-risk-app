@@ -15,9 +15,13 @@ export interface NotifyView {
   support: Support;
   /** 操作結果的提示（新增、刪除、測試通知…） */
   message: string;
+  /** 「允許通知」的結果提示（顯示在按鈕下方） */
+  permMessage: string;
+  /** 一行診斷（權限、模式…），回報「沒反應」時用 */
+  diag: string;
 }
 
-function permissionBlock(sp: Support): string {
+function permissionBlock(sp: Support, permMessage: string): string {
   if (!sp.supported) return `<p class="note"><b>${PERMISSION_TEXT.unsupported}</b>規則還是可以建立，但不會跳出通知。</p>`;
   if (sp.needsInstall)
     return `<p class="note">iPhone／iPad 要先<b>加入主畫面並從主畫面開啟</b>，才能要求通知權限（Apple 的官方說明，iOS／iPadOS 16.4 起）。請看上面的「安裝與更新」。</p>`;
@@ -26,7 +30,8 @@ function permissionBlock(sp: Support): string {
     : sp.permission === "granted"
       ? `<button class="btn" data-act="nt-test">送一則測試通知</button>`
       : "";
-  return `<p class="muted small" role="status">${PERMISSION_TEXT[sp.permission]}</p>${btn ? `<div class="row">${btn}</div>` : ""}`;
+  const msg = permMessage ? `<p class="note" role="status">${esc(permMessage)}</p>` : "";
+  return `<p class="muted small" role="status">${PERMISSION_TEXT[sp.permission]}</p>${btn ? `<div class="row">${btn}</div>` : ""}${msg}`;
 }
 
 function reportLine(r: RuleReport | undefined): string {
@@ -78,7 +83,7 @@ export function renderNotifyCard(v: NotifyView): string {
     資料每 15 分鐘更新一次、地震報告可能延遲數分鐘到數十分鐘。緊急警報請用氣象署官方 APP。</p>
     <p class="muted small"><b>什麼時候會通知：</b>APP 開著（或在背景還活著）、而且資料更新的時候才會評估。
     APP 完全關閉就不會通知——那需要伺服器推播，目前沒有做。</p>
-    ${permissionBlock(v.support)}
+    ${permissionBlock(v.support, v.permMessage)}
     <h3>我的規則（最多 ${RULE_MAX} 條）</h3>
     ${ruleRows(v)}
     ${v.message ? `<p class="muted small" role="status">${esc(v.message)}</p>` : ""}
@@ -89,6 +94,7 @@ export function renderNotifyCard(v: NotifyView): string {
       <li>資料是示意用假資料、超過 ${MAX_FEED_AGE_H} 小時沒更新、模型沒涵蓋這個位置、或算不出倍數時，不通知。新地震報告只看最近 ${QUAKE_MAX_AGE_H} 小時。</li>
       <li>「倍數」是模型相對「平常」（近兩年平均水準）的比值；低於 1 很常見，只代表現在比平均安靜，<b>不是比較安全</b>，也不會觸發通知。</li>
       <li>規則與位置只存在這支手機，不會上傳。</li>
+      <li>通知狀態（回報問題時可以貼這行）：${esc(v.diag)}</li>
     </ul>
   </section>`;
 }
