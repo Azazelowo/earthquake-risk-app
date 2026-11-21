@@ -13,7 +13,7 @@ import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, neares
 import { sliderText } from "./ui/sliders";
 import { loadFavs, makeFav, removeFav, storeFavs, upsertFav, FAV_MAX, type Fav } from "./favs";
 import { evaluateRule, runNotify, type RuleReport } from "./notify/engine";
-import { notifySupport, requestPermission, showNotice } from "./notify/platform";
+import { diagnose, inAppBrowserUA, notifySupport, requestPermissionTracked, showNotice } from "./notify/platform";
 import {
   loadRules, loadState, makeRule, pruneForFavs, pruneState, removeRule, storeRules, storeState, upsertRule, validThreshold,
   type Rule, type RuleKind,
@@ -63,6 +63,8 @@ let favs: Fav[] = loadFavs();
 let notifyRules: Rule[] = loadRules();
 let notifyState = loadState();
 let ntMsg = "";
+/** 「允許通知」的結果提示，顯示在按鈕正下方（使用者按下去時眼睛就在那裡） */
+let permMsg = "";
 /** ⓘ 頁按「返回」要回到的畫面 */
 let lastMain = "#/";
 /** 換頁後要捲到的區塊（例如從地圖設定跳到 ⓘ 頁的金鑰設定） */
@@ -274,7 +276,7 @@ function notifyView() {
     const fav = favs.find((f) => f.id === rule.favId);
     reports[rule.id] = { rule, evaluation: evaluateRule(rule, fav, s.feed, now), fired: false, failed: false };
   }
-  return { favs, rules: notifyRules, reports, support: notifySupport(), message: ntMsg };
+  return { favs, rules: notifyRules, reports, support: notifySupport(), message: ntMsg, permMessage: permMsg, diag: diagnose() };
 }
 
 /** 資料更新後評估所有規則並送出該送的通知。只在拿到網路上的真資料時做（快取或假資料不通知）。 */
@@ -287,8 +289,18 @@ async function evaluateNotifications() {
 }
 
 async function allowNotifications() {
-  const p = await requestPermission();
-  ntMsg = p === "granted" ? "已允許通知。" : p === "denied" ? "通知被封鎖了；要重新開啟請到瀏覽器或手機的設定。" : "沒有允許通知。";
+  permMsg = "已送出要求，正在等你回應。請看畫面上方、網址列旁或下方有沒有跳出權限視窗。";
+  render();
+  const p = await requestPermissionTracked(() => {
+    permMsg = "還沒收到回應。權限視窗可能被收成網址列旁的小圖示，或被這個瀏覽器擋掉；也可以到瀏覽器的「網站設定」手動允許通知。";
+    render();
+  });
+  permMsg =
+    p === "granted" ? "已允許通知。可以按下面的「送一則測試通知」確認。"
+    : p === "denied" ? "通知被封鎖了；要重新開啟請到瀏覽器或手機的網站設定。"
+    : p === "unsupported" ? "這個瀏覽器不支援網頁通知。"
+    : "沒有允許（視窗被關掉或沒有回應）。再按一次試試；若一直沒有視窗，請到網站設定檢查。";
+  if (inAppBrowserUA(navigator.userAgent)) permMsg += " 你可能在 LINE、Facebook 等內建瀏覽器裡，這類環境通常不支援通知，請改用 Chrome 開啟。";
   render();
 }
 

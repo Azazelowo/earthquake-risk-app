@@ -6,6 +6,7 @@ import { makeMockFeed } from "../data/mock";
 import type { Fav } from "../favs";
 import { LEVEL_EDGES } from "../format";
 import { renderNotifyCard } from "../ui/notify";
+import { inAppBrowserUA } from "./platform";
 import { decide, eventKey, evaluateRule, runNotify, type Evaluation } from "./engine";
 import { levelMessage, probMessage, quakeMessage, QUAKE_NOTE, NOT_FORECAST, ratioLabel, ruleText, type Msg } from "./message";
 import {
@@ -338,7 +339,7 @@ describe("文案", () => {
 
 describe("設定畫面", () => {
   const view = (favs: Fav[], rules: Rule[], supported = true) => ({
-    favs, rules, reports: {}, message: "",
+    favs, rules, reports: {}, message: "", permMessage: "", diag: "權限＝default",
     support: { supported, permission: "default" as const, ios: false, standalone: false, needsInstall: false },
   });
 
@@ -362,6 +363,30 @@ describe("設定畫面", () => {
     const html = renderNotifyCard({ ...view([FAV], []), support: { supported: true, permission: "default", ios: true, standalone: false, needsInstall: true } });
     expect(html).toContain("加入主畫面");
     expect(html).not.toContain('data-act="nt-allow"');
+  });
+});
+
+describe("允許通知的回饋", () => {
+  const view = (permMessage: string) => ({
+    favs: [FAV], rules: [], reports: {}, message: "", permMessage, diag: "權限＝default，支援＝是",
+    support: { supported: true, permission: "default" as const, ios: false, standalone: false, needsInstall: false },
+  });
+
+  it("結果提示緊接在按鈕後面，並且要跳脫", () => {
+    const html = renderNotifyCard(view("<b>x</b>已送出要求"));
+    expect(html.indexOf("nt-allow")).toBeLessThan(html.indexOf("已送出要求"));
+    expect(html).toContain("&lt;b&gt;x");
+    expect(html).not.toContain("<b>x</b>");
+  });
+
+  it("畫面上永遠有一行診斷可以貼出來回報", () => {
+    expect(renderNotifyCard(view(""))).toContain("權限＝default，支援＝是");
+  });
+
+  it("辨認常見的 App 內建瀏覽器", () => {
+    expect(inAppBrowserUA("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36")).toBe(false);
+    expect(inAppBrowserUA("Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36 Line/14.0")).toBe(true);
+    expect(inAppBrowserUA("Mozilla/5.0 (iPhone) AppleWebKit/605 [FBAN/FBIOS;FBAV/450]")).toBe(true);
   });
 });
 

@@ -41,6 +41,40 @@ export async function requestPermission(): Promise<Permission> {
   }
 }
 
+/**
+ * 同 requestPermission，但「很久沒有結果」時先通知畫面一次（onSlow），之後照樣等結果。
+ * 為什麼：Android 上按了「允許通知」卻沒看到任何東西的回報，我們沒有那支手機可以重現，原因不確定
+ * （權限視窗被瀏覽器收成較不顯眼的樣式、被 App 內建瀏覽器擋掉、之前被封鎖等都有可能）；
+ * 至少要讓使用者看到「已經送出要求、現在是什麼狀態」，而不是毫無反應。
+ */
+export async function requestPermissionTracked(onSlow: () => void, slowMs = 6000): Promise<Permission> {
+  const timer = setTimeout(onSlow, slowMs);
+  try {
+    return await requestPermission();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 常見「App 內建瀏覽器」的標記（LINE、Facebook、Instagram，以及 Android WebView 的 "; wv)"）。這類環境通常不支援網頁通知。 */
+export function inAppBrowserUA(ua: string): boolean {
+  return /\bLine\/|FBAN|FBAV|FB_IAB|Instagram|; wv\)/i.test(ua);
+}
+
+/** 給使用者回報問題用的一行診斷：只含通知相關狀態，不含任何個人資料。 */
+export function diagnose(): string {
+  const sp = notifySupport();
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const parts = [
+    `權限＝${sp.permission}`,
+    `支援＝${sp.supported ? "是" : "否"}`,
+    `模式＝${sp.standalone ? "已安裝的 APP" : "瀏覽器分頁"}`,
+    `安全連線＝${typeof isSecureContext !== "undefined" && isSecureContext ? "是" : "否"}`,
+  ];
+  if (inAppBrowserUA(ua)) parts.push("內建瀏覽器＝可能是");
+  return parts.join("，");
+}
+
 /** 送出一則通知。優先用 service worker（手機上才能點通知回到 APP），沒有就退回 Notification 建構式。回傳是否送出。 */
 export async function showNotice(msg: Msg): Promise<boolean> {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return false;
