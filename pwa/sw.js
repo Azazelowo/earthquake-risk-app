@@ -52,6 +52,18 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
+// 點通知：回到已經開著的 APP 視窗，沒有就開一個新的（通知由 APP 自己在手機上評估後送出，見 docs/NOTIFY.md）
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL("./", scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => c.url.startsWith(target));
+      return open ? open.focus() : self.clients.openWindow(target);
+    }),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;

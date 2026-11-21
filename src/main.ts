@@ -12,6 +12,13 @@ import type { State, Cond, Place } from "./state";
 import { COUNTIES, DEFAULT_COND, RADIUS_MIN, RADIUS_MAX, loadSaved, save, nearestCounty, placeShort, sliderCond, type CondSlider } from "./state";
 import { sliderText } from "./ui/sliders";
 import { loadFavs, makeFav, removeFav, storeFavs, upsertFav, FAV_MAX, type Fav } from "./favs";
+import { evaluateRule, runNotify, type RuleReport } from "./notify/engine";
+import { notifySupport, requestPermission, showNotice } from "./notify/platform";
+import {
+  loadRules, loadState, makeRule, pruneForFavs, pruneState, removeRule, storeRules, storeState, upsertRule, validThreshold,
+  type Rule, type RuleKind,
+} from "./notify/rules";
+import { NOTIFY_INPUT_IDS, renderNotifyCard } from "./ui/notify";
 import { distText, esc, twTime } from "./format";
 import { renderPublic, renderPlaceSheet, renderCondSheet, renderShareSheet, condPreview, condText } from "./ui/public";
 import { buildShareUrl, parseShare, shareLocationByDefault, type SharedView } from "./share";
@@ -52,6 +59,10 @@ let sheetQuake: Quake | null = null;
 let historyView: HistoryView = { status: "idle" };
 /** 我的情境（只存在這支手機） */
 let favs: Fav[] = loadFavs();
+/** 通知規則與各規則的狀態（只存在這支手機）；ntMsg 是設定畫面上的操作結果提示 */
+let notifyRules: Rule[] = loadRules();
+let notifyState = loadState();
+let ntMsg = "";
 /** ⓘ 頁按「返回」要回到的畫面 */
 let lastMain = "#/";
 /** 換頁後要捲到的區塊（例如從地圖設定跳到 ⓘ 頁的金鑰設定） */
@@ -108,7 +119,7 @@ function render() {
   document.documentElement.classList.toggle("map-full", s.mapFull);
   if (r.mode === "history" && historyView.status === "idle") void openHistoryIndex();
   const body = safely(() =>
-    info ? renderInfo(s, lastMain)
+    info ? renderInfo(s, lastMain, renderNotifyCard(notifyView()))
     : r.mode === "history" ? renderHistory(s, historyView)
     : expert ? renderExpert(s, r.tab)
     : renderPublic(s, { installHint, shared: sharedKind }),
@@ -147,7 +158,7 @@ function render() {
 }
 
 /** 重畫時要保留內容的輸入框 */
-const DRAFT_IDS = ["carto-key", "fav-name"];
+const DRAFT_IDS = ["carto-key", "fav-name", ...NOTIFY_INPUT_IDS];
 
 /** 把目前的位置與條件存成情境（只存在這支手機） */
 function saveFav() {
@@ -250,6 +261,85 @@ async function refreshFeed() {
   s.feedStatus = { origin: r.origin, error: r.error };
   render();
   nameEpicenter();
+  void evaluateNotifications();
+}
+
+// ---------- 通知（規則引擎在 src/notify/；這裡只負責接線）----------
+
+function notifyView() {
+  const now = Date.now();
+  // 每次畫面重畫都重新評估一次（很輕：最多 12 條規則），設定畫面才看得到「現在會不會觸發」
+  const reports: Record<string, RuleReport> = {};
+  for (const rule of notifyRules) {
+    const fav = favs.find((f) => f.id === rule.favId);
+    reports[rule.id] = { rule, evaluation: evaluateRule(rule, fav, s.feed, now), fired: false, failed: false };
+  }
+  return { favs, rules: notifyRules, reports, support: notifySupport(), message: ntMsg };
+}
+
+/** 資料更新後評估所有規則並送出該送的通知。只在拿到網路上的真資料時做（快取或假資料不通知）。 */
+async function evaluateNotifications() {
+  if (!notifyRules.length || s.feedStatus?.origin !== "network" || s.history) return;
+  const res = await runNotify(s.feed, favs, notifyRules, notifyState, { now: Date.now(), show: showNotice });
+  notifyState = pruneState(res.state, notifyRules);
+  storeState(notifyState);
+  if (res.reports.some((r) => r.fired) && route().mode === "info") render();
+}
+
+async function allowNotifications() {
+  const p = await requestPermission();
+  ntMsg = p === "granted" ? "已允許通知。" : p === "denied" ? "通知被封鎖了；要重新開啟請到瀏覽器或手機的設定。" : "沒有允許通知。";
+  render();
+}
+
+async function testNotification() {
+  const ok = await showNotice({
+    title: "測試通知",
+    body: "看到這則，表示這支裝置可以顯示通知。這只是測試，不是地震預警。",
+    tag: "eqrisk-test",
+  });
+  ntMsg = ok ? "已送出測試通知。" : "沒有送出：請先允許通知。";
+  render();
+}
+
+function addNotifyRule() {
+  const val = (id: string) => (document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null)?.value ?? "";
+  const kind = val("nt-kind") as RuleKind;
+  const favId = val("nt-fav");
+  const raw = kind === "level" ? +val("nt-level") : kind === "prob" ? +val("nt-prob") / 100 : +val("nt-ml");
+  const minRatio = kind === "prob" && val("nt-ratio").trim() !== "" ? +val("nt-ratio") : 0;
+  if (!favs.some((f) => f.id === favId) || !validThreshold(kind, raw) || !Number.isFinite(minRatio) || minRatio < 0) {
+    ntMsg = "門檻不在可用的範圍內（機率 0.01%–90%，規模 ML 3–8），沒有新增。";
+    return render();
+  }
+  const rule = makeRule(favId, kind, raw, minRatio);
+  const next = rule && upsertRule(notifyRules, rule);
+  if (!next) ntMsg = "規則已經滿了，先刪掉一條再新增。";
+  else if (!storeRules(next)) ntMsg = "存不了（可能是無痕模式或儲存空間已滿），沒有新增。";
+  else {
+    notifyRules = next;
+    ntMsg = "已新增。建立當下已經達標的條件與已經存在的地震報告不會馬上通知，只記下現況。";
+  }
+  render();
+}
+
+function changeNotifyRule(id: string, action: "toggle" | "delete") {
+  const rule = notifyRules.find((r) => r.id === id);
+  if (!rule) return;
+  if (action === "delete") {
+    notifyRules = removeRule(notifyRules, id);
+    notifyState = pruneState(notifyState, notifyRules);
+    storeState(notifyState);
+  } else {
+    notifyRules = notifyRules.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r));
+    // 重新啟用視同新建立：停用期間的變化不補通知，所以清掉狀態、下次評估只記下現況
+    if (!rule.enabled) {
+      notifyState = pruneState(notifyState, notifyRules.filter((r) => r.id !== id));
+      storeState(notifyState);
+    }
+  }
+  storeRules(notifyRules);
+  render();
 }
 
 /**
@@ -339,7 +429,7 @@ const clampRadius = (v: number) => Math.min(Math.max(Math.round(v), RADIUS_MIN),
 
 app.addEventListener("click", (ev) => {
   const t = (ev.target as HTMLElement).closest<HTMLElement>(
-    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-fav],[data-fav-del],[data-history],[data-basemap],[data-smooth]",
+    "[data-act],[data-county],[data-cond],[data-scope],[data-layer],[data-apply],[data-rank],[data-quake],[data-fav],[data-fav-del],[data-history],[data-basemap],[data-smooth],[data-nt-toggle],[data-nt-del]",
   );
   if (!t) return;
   const d = t.dataset;
@@ -364,6 +454,10 @@ app.addEventListener("click", (ev) => {
   else if (d.act === "install") return void promptInstall();
   else if (d.act === "check-update") return void checkUpdate();
   else if (d.act === "apply-update") return applyUpdate();
+  else if (d.act === "nt-allow") return void allowNotifications();
+  else if (d.act === "nt-test") return void testNotification();
+  else if (d.act === "nt-add") return addNotifyRule();
+  else if (d.ntToggle || d.ntDel) return changeNotifyRule(d.ntToggle ?? d.ntDel!, d.ntToggle ? "toggle" : "delete");
   else if (d.act === "dismiss-install") (installHint = false), flag.set(INSTALL_HINT_KEY, "off");
   else if (d.act === "need-carto") {
     // CARTO 底圖還沒有金鑰：帶去 ⓘ 頁的設定區
@@ -417,6 +511,11 @@ app.addEventListener("click", (ev) => {
     if (!f || !confirm(`刪除情境「${f.name}」？`)) return;
     favs = removeFav(favs, f.id);
     storeFavs(favs);
+    // 掛在這個情境上的通知規則一起清掉（規則沒有情境就沒有地點可以評估）
+    notifyRules = pruneForFavs(notifyRules, new Set(favs.map((x) => x.id)));
+    storeRules(notifyRules);
+    notifyState = pruneState(notifyState, notifyRules);
+    storeState(notifyState);
   } else if (d.fav) {
     // 套用情境：地點＋條件；「全台」情境打開專家版的全台地圖
     const f = favs.find((x) => x.id === d.fav);
